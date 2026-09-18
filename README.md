@@ -102,7 +102,7 @@ Real inbound email: point Mailpit's webhook (`docker-compose.yml`) or AWS SES at
 | `packages/storage` | S3-compatible object store (MinIO locally) |
 
 Design principles & data model: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-AWS deployment: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+Production (Supabase + Vercel/Render): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Configuration
 
@@ -110,6 +110,14 @@ Copy `.env.example` → `.env`. Highlights:
 - `AI_PROVIDER=mock` runs fully offline/free; set `openai` + `OPENAI_API_KEY` for real LLMs.
 - `DEV_WORKSPACE_SLUG` scopes requests until Supabase auth lands.
 - Agents authenticate via `POST /api-keys` (Settings → API Keys in the app).
+
+Production (venlabs-demo): point `DATABASE_URL` at the Supabase **session** pooler and
+`STORAGE_ENDPOINT` at the Storage S3 API. See [`.env.example`](.env.example) (commented
+block) and [`docs/DEPLOY.md`](docs/DEPLOY.md). Never commit secrets.
+
+Shareable demo: Vite SPA on **Vercel** (`vercel.json`) + Fastify API on **Render/Fly/Railway**
+(`render.yaml`, `Dockerfile.api`). Fastify is not deployed as Vercel serverless (SSE,
+uploads, pg-boss workers).
 
 ## Status
 

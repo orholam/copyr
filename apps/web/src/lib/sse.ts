@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { apiUrl } from "./api";
 
 type PresenceListener = (msg: {
   userId: string | null;
@@ -30,7 +31,7 @@ export function useRealtime(workspaceSlug: string) {
   clientRef.current = client;
 
   useEffect(() => {
-    const es = new EventSource(`/api/v1/events`, { withCredentials: false });
+    const es = new EventSource(apiUrl("/api/v1/events"), { withCredentials: false });
     // workspace slug rides the default dev session; events are filtered server-side
 
     es.addEventListener("activity", (ev) => {

@@ -37,6 +37,23 @@ function loadDotEnv(): void {
 
 loadDotEnv();
 
+/** Treat blank env values as unset so production can clear a default. */
+const emptyToUndef = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+
+/** Env-friendly boolean: "false" / "0" are false (unlike Boolean("false")). */
+const envBoolean = (fallback: boolean) =>
+  z.preprocess((v) => {
+    if (v === undefined || v === null || v === "") return fallback;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v !== 0;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (["false", "0", "no", "off"].includes(s)) return false;
+      if (["true", "1", "yes", "on"].includes(s)) return true;
+    }
+    return v;
+  }, z.boolean());
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().default(4100),
@@ -45,17 +62,31 @@ const schema = z.object({
 
   DEV_WORKSPACE_SLUG: z.string().default("harbor-ventures"),
 
+  /** Session-mode or direct Postgres URL. Used for migrations and pg-boss (LISTEN/NOTIFY). */
   DATABASE_URL: z
     .string()
     .startsWith("postgres")
     .default("postgres://copyr:copyr@localhost:5433/copyr"),
+  /**
+   * Optional transaction-mode pooler URL for the app query pool (Supabase port 6543).
+   * Leave unset locally. Never point pg-boss at this URL.
+   */
+  DATABASE_POOL_URL: z.preprocess(emptyToUndef, z.string().startsWith("postgres").optional()),
+  /** `auto` enables SSL for Supabase hosts / sslmode=require. */
+  DATABASE_SSL: z.enum(["auto", "require", "disable"]).default("auto"),
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
 
-  STORAGE_ENDPOINT: z.string().url().default("http://localhost:9000"),
+  /**
+   * S3-compatible endpoint. MinIO locally; Supabase Storage S3 API in prod:
+   * `https://<project-ref>.storage.supabase.co/storage/v1/s3`.
+   * Empty string + native AWS S3: omit and set STORAGE_FORCE_PATH_STYLE=false.
+   */
+  STORAGE_ENDPOINT: z.preprocess(emptyToUndef, z.string().url().optional()),
   STORAGE_REGION: z.string().default("us-east-1"),
   STORAGE_BUCKET: z.string().default("copyr-local"),
   STORAGE_ACCESS_KEY_ID: z.string().default("copyr-dev"),
   STORAGE_SECRET_ACCESS_KEY: z.string().default("copyr-dev-secret"),
-  STORAGE_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  STORAGE_FORCE_PATH_STYLE: envBoolean(true),
 
   AI_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   OPENAI_BASE_URL: z.string().url().default("https://api.openai.com/v1"),
@@ -66,6 +97,14 @@ const schema = z.object({
   INBOUND_WEBHOOK_SECRET: z.string().default("dev-inbound-secret"),
 
   JOB_CONCURRENCY: z.coerce.number().int().default(4),
+
+  /** Comma-separated extra browser origins allowed by the API CORS policy. */
+  CORS_ORIGINS: z.string().default(""),
+  /** Allow `https://*.vercel.app` preview deployments to call the API. */
+  CORS_ALLOW_VERCEL_PREVIEWS: envBoolean(false),
+
+  /** Run drizzle migrations on API boot (useful as a Render release/start hook). */
+  AUTO_MIGRATE: envBoolean(false),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -75,10 +114,33 @@ let cached: AppConfig | undefined;
 export function loadConfig(overrides: Partial<Record<string, string>> = {}): AppConfig {
   if (cached && Object.keys(overrides).length === 0) return cached;
   const parsed = schema.parse({ ...process.env, ...overrides });
+  if (!parsed.STORAGE_ENDPOINT && parsed.NODE_ENV !== "production") {
+    parsed.STORAGE_ENDPOINT = "http://localhost:9000";
+  }
   if (Object.keys(overrides).length === 0) cached = parsed;
   return parsed;
 }
 
 export function resetConfigCache(): void {
   cached = undefined;
+}
+
+export function extraCorsOrigins(cfg: AppConfig): string[] {
+  return cfg.CORS_ORIGINS.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function isAllowedCorsOrigin(origin: string, cfg: AppConfig): boolean {
+  const allowed = new Set([
+    cfg.WEB_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    ...extraCorsOrigins(cfg),
+  ]);
+  if (allowed.has(origin)) return true;
+  if (cfg.CORS_ALLOW_VERCEL_PREVIEWS && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
+    return true;
+  }
+  return false;
 }

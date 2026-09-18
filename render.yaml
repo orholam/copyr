@@ -1,0 +1,49 @@
+# Copyr API — Render Blueprint (long-running Fastify + pg-boss workers)
+# https://render.com/docs/blueprint-spec
+#
+# Fastify is not adapted to Vercel serverless (SSE, 100MB uploads, in-process
+# workers). This service is the production API; the Vite SPA deploys on Vercel.
+
+services:
+  - type: web
+    name: copyr-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTO_MIGRATE
+        value: "true"
+      - key: CORS_ALLOW_VERCEL_PREVIEWS
+        value: "true"
+      - key: DATABASE_SSL
+        value: auto
+      - key: STORAGE_FORCE_PATH_STYLE
+        value: "true"
+      - key: STORAGE_BUCKET
+        value: copyr
+      - key: STORAGE_ENDPOINT
+        value: https://cdsngnauduhiaidzncie.storage.supabase.co/storage/v1/s3
+      - key: AI_PROVIDER
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_POOL_URL
+        sync: false
+      - key: STORAGE_REGION
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: WEB_URL
+        sync: false
+      - key: INBOUND_WEBHOOK_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEV_WORKSPACE_SLUG
+        value: harbor-ventures

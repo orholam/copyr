@@ -38,6 +38,9 @@ importers:
       '@copyr/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@copyr/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@copyr/mcp':
         specifier: workspace:*
         version: link:../mcp

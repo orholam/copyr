@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { ZodError } from "zod";
 import { CoreError, createCore, type Core, type Session } from "@copyr/core";
-import { loadConfig } from "@copyr/config";
+import { isAllowedCorsOrigin, loadConfig } from "@copyr/config";
 import { resolveSession } from "@copyr/core";
 
 export interface AppRequest extends FastifyRequest {
@@ -35,7 +35,10 @@ export async function buildApp(opts: { core?: Core } = {}) {
   });
 
   await app.register(cors, {
-    origin: [config.WEB_URL, "http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      cb(null, isAllowedCorsOrigin(origin, config));
+    },
     credentials: true,
   });
   await app.register(multipart, {

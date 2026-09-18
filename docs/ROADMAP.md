@@ -67,3 +67,4 @@ Multi-session build plan. Each phase ends with a working, verifiable system.
 - [x] Workflow/automation engine v1 + outbound webhooks (see docs/AUDIT.md phase-3 table)
 - [ ] Supabase auth integration (swap point isolated in `resolveSession`)
 - [ ] IaC (CDK or Terraform), OTel tracing, alerting
+- [x] Supabase Postgres + Storage wiring + Vercel/Render demo deploy path (`docs/DEPLOY.md`)

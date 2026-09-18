@@ -116,10 +116,11 @@ auth layer is isolated in one hook so swapping providers is a one-file change.
 
 ## 8. Deployment target (when ready)
 
-- ECS Fargate services: api, mcp-http, web (static via S3+CloudFront or served by api)
-- RDS Postgres Multi-AZ, S3 buckets private + signed URLs
-- SES inbound → S3 → webhook invoke; SES SMTP for outbound forwards
-- Secrets in SSM/Secrets Manager; env matrix in `docs/DEPLOY.md`
+- **Demo / VenLabs:** Vite SPA on Vercel; Fastify API + workers on Render/Fly/Railway;
+  Supabase Postgres (session pooler) + Supabase Storage (S3 API). See `docs/DEPLOY.md`.
+- **AWS-shaped:** ECS Fargate (api, mcp-http); RDS Postgres Multi-AZ; S3; SES inbound.
+- Secrets in the host's secret store / SSM; env matrix in `docs/DEPLOY.md`.
+- Fastify is not adapted to Vercel serverless (SSE, large uploads, pg-boss).
 
 ## 9. Quality gates
 
