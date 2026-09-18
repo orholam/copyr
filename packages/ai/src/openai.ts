@@ -1,7 +1,6 @@
 import { loadConfig } from "@copyr/config";
 import {
   AiError,
-  type AssistantToolCall,
   type AssistantTurnInput,
   type AssistantTurnResult,
   type AiProvider,
@@ -19,6 +18,7 @@ import {
   type ThesisScoreOutput,
   type UpdateClassification,
 } from "./types.js";
+import { formatToolCatalog, normalizeAssistantToolCalls } from "./assistant-tools.js";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -54,6 +54,28 @@ const EMAIL_TRIAGE_JSON_SCHEMA = {
     updateTitle: { type: ["string", "null"] },
     summary: { type: "string" },
     confidence: { type: "number" },
+  },
+} as const;
+
+const ASSISTANT_TURN_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    reply: { type: ["string", "null"] },
+    toolCalls: {
+      type: "array",
+      maxItems: 2,
+      items: {
+        type: "object",
+        additionalProperties: true,
+        required: ["name"],
+        properties: {
+          name: { type: "string" },
+          args: { type: "object", additionalProperties: true },
+          arguments: { type: ["object", "string"] },
+        },
+      },
+    },
   },
 } as const;
 
@@ -336,9 +358,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
   }
 
   async assistantTurn(input: AssistantTurnInput): Promise<AssistantTurnResult> {
-    const toolLines = input.tools
-      .map((t) => `- ${t.name}: ${t.description}`)
-      .join("\n");
+    const toolLines = formatToolCatalog(input.tools);
     const transcript = input.messages
       .map((m) => {
         if (m.role === "tool") return `[tool result]\n${m.content.slice(0, 4_000)}`;
@@ -348,16 +368,19 @@ export class OpenAiCompatibleProvider implements AiProvider {
       .join("\n\n")
       .slice(-40_000);
 
-    const res = await this.structured<{ reply?: string | null; toolCalls?: AssistantToolCall[] }>(
+    const res = await this.structured<{ reply?: string | null; toolCalls?: unknown }>(
       "assistant_turn",
-      zodLikeJsonSchema(),
+      ASSISTANT_TURN_JSON_SCHEMA,
       [
         {
           role: "system",
           content:
             "You are the Copyr Assistant — the central chat interface of a VC operating platform. " +
-            "You can call product tools to answer. Respond with JSON: either {\"toolCalls\": [{\"name\", \"args\"}]} " +
+            "You can call product tools to answer. Respond with JSON: either " +
+            "{\"toolCalls\": [{\"name\": \"create_company\", \"args\": {\"name\": \"Acme\"}}]} " +
             "to run one round of tools (max 2), or {\"reply\": \"...\"} as the final markdown answer. " +
+            "Always fill every required argument listed in the catalog (never call a required-arg tool with empty args). " +
+            "If a tool result reports missing arguments, retry once with those fields populated from the conversation. " +
             "Prefer tools over guessing; cite what results actually say; be concise.\n" +
             "Reply formatting rules:\n" +
             "- Compact markdown only: **bold company names**, short '- ' bullets, one '###' heading max\n" +
@@ -370,21 +393,16 @@ export class OpenAiCompatibleProvider implements AiProvider {
       ],
     );
 
-    const calls = (res.toolCalls ?? []).filter(
-      (c) => c && typeof c.name === "string" && input.tools.some((t) => t.name === c.name),
-    );
+    const allowed = new Set(input.tools.map((t) => t.name));
+    const calls = normalizeAssistantToolCalls(res.toolCalls, allowed);
     return {
       reply: calls.length ? null : res.reply ?? "(no response)",
-      toolCalls: calls.slice(0, 2).map((c) => ({ name: c.name, args: c.args ?? {} })),
+      toolCalls: calls.slice(0, 2),
       confidence: 0.8,
     };
   }
 }
 
-/**
- * The real JSON Schema is derived per-call in production builds; this generic
- * open schema keeps the adapter simple while remaining valid for providers.
- */
 function zodLikeJsonSchema(): object {
   return { type: "object" };
 }

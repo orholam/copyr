@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { conversations, messages } from "@copyr/db/schema.js";
 import type { ConversationDto, MessageDto } from "@copyr/contracts";
+import { requiredArgNames, type AssistantToolSpec } from "@copyr/ai";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
@@ -170,7 +171,7 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
  * via an in-process bridge to the main MCP server).
  */
 export interface AssistantToolHost {
-  listTools(): Promise<Array<{ name: string; description: string }>>;
+  listTools(): Promise<AssistantToolSpec[]>;
   call(name: string, args: Record<string, unknown>, session: Session): Promise<unknown>;
 }
 
@@ -357,9 +358,17 @@ async function runTurn(
     .where(eq(messages.conversationId, convId))
     .orderBy(desc(messages.position))
     .limit(24);
-  const history = priorRows
-    .reverse()
-    .map((m) => ({ role: m.role, content: m.content || JSON.stringify(m.data ?? {}) }) as { role: "user" | "assistant" | "tool"; content: string });
+  const history = priorRows.reverse().map((m) => {
+    if (m.role === "tool") {
+      const data = m.data as { name?: string; args?: Record<string, unknown> } | null;
+      const prefix = data?.name ? `${data.name}(${JSON.stringify(data.args ?? {})}) → ` : "";
+      return { role: "tool" as const, content: `${prefix}${m.content || ""}` };
+    }
+    return {
+      role: m.role,
+      content: m.content || JSON.stringify(m.data ?? {}),
+    } as { role: "user" | "assistant" | "tool"; content: string };
+  });
 
   const toolSpecs = await host.listTools();
 
@@ -390,11 +399,25 @@ async function runTurn(
           resultText = JSON.stringify(compactToolResult(result)).slice(0, 6_000);
         } catch (err) {
           ok = false;
-          resultText = JSON.stringify({ error: err instanceof Error ? err.message : String(err) }).slice(0, 2_000);
+          const spec = toolSpecs.find((t) => t.name === call.name);
+          const required = requiredArgNames(spec?.inputSchema);
+          resultText = JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+            receivedArgs: call.args ?? {},
+            ...(required.length
+              ? {
+                  requiredArguments: required,
+                  hint: `Retry ${call.name} with args including ${required.join(", ")} (from the user message).`,
+                }
+              : {}),
+          }).slice(0, 2_000);
         }
         emit?.({ type: "tool_end", name: call.name, ok, ms: Date.now() - t0 });
         await insertMessage("tool", resultText, { name: call.name, args: call.args ?? {}, ok });
-        history.push({ role: "tool", content: resultText });
+        history.push({
+          role: "tool",
+          content: `${call.name}(${JSON.stringify(call.args ?? {})}) → ${resultText}`,
+        });
       }
       continue;
     }
@@ -508,7 +531,7 @@ function mapConversation(row: ConversationRow, messageCount: number): Conversati
 
 function mapMessage(row: MessageRow): MessageDto {
   const data = row.data as
-    | { toolCalls?: Array<{ name: string; args: Record<string, unknown> }>; name?: string; ok?: boolean }
+    | { toolCalls?: Array<{ name: string; args: Record<string, unknown> }>; name?: string; args?: Record<string, unknown>; ok?: boolean }
     | null;
   return {
     id: row.id,
@@ -517,6 +540,7 @@ function mapMessage(row: MessageRow): MessageDto {
     content: row.content,
     toolCalls: data?.toolCalls ?? undefined,
     toolName: data?.name ?? undefined,
+    toolArgs: data?.args ?? undefined,
     ok: data?.ok ?? undefined,
     position: row.position,
     createdAt: toIso(row.createdAt)!,
