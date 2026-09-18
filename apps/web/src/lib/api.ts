@@ -1,4 +1,4 @@
-/** Thin typed API client for the Copyr REST API. */
+/** Thin typed API client for the VentureLabs REST API. */
 
 import { getAccessToken, isAuthRequired } from "./supabase";
 

@@ -89,10 +89,10 @@ function Logo({ light = false }: { light?: boolean }) {
           light ? "bg-paper-50 text-paper-900" : "bg-paper-900 text-paper-50"
         }`}
       >
-        C
+        V
       </span>
       <span className={`font-serif text-xl tracking-tight ${light ? "text-paper-50" : "text-paper-900"}`}>
-        Copyr
+        VentureLabs
       </span>
     </span>
   );
@@ -113,7 +113,7 @@ function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-paper-900/[0.08] bg-paper-100/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" aria-label="Copyr home">
+        <Link to="/" aria-label="VentureLabs home">
           <Logo />
         </Link>
         <nav className="hidden items-center gap-8 md:flex">
@@ -235,7 +235,7 @@ function HeroMock() {
           <i className="h-2.5 w-2.5 rounded-full bg-paper-400" />
         </span>
         <span className="mx-auto flex items-center gap-1.5 rounded-md border border-paper-900/[0.18] bg-white px-3 py-1 text-xs font-medium text-paper-700">
-          copyr.dev/app/pipeline
+          venturelabs.vercel.app/app/pipeline
         </span>
         <span className="w-10" />
       </div>
@@ -300,7 +300,7 @@ function Hero() {
             Deal flow that <em className="italic text-brand-700">runs itself.</em>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-paper-600">
-            Forward an email, paste a DocSend link, or drop a hundred PDFs. Copyr triages every pitch,
+            Forward an email, paste a DocSend link, or drop a hundred PDFs. VentureLabs triages every pitch,
             extracts every field into your schema, files permanent decks, and keeps the pipeline current —
             no manual data entry, no expired links.
           </p>
@@ -383,7 +383,7 @@ function Platform() {
         {[
           {
             title: "For solo & emerging GPs",
-            body: "Operational leverage is the fund. Copyr ingests and triages like a team of three — every deck read, every field filled, every follow-up tracked — so one person covers what used to take four.",
+            body: "Operational leverage is the fund. VentureLabs ingests and triages like a team of three — every deck read, every field filled, every follow-up tracked — so one person covers what used to take four.",
           },
           {
             title: "For investment teams",
@@ -788,7 +788,7 @@ function Features() {
       <FeatureRow
         n="01"
         title="An inbox that triages itself"
-        desc="Forward pitch emails to your Copyr address — or pipe inbound via webhook. Every message is deduped, its company detected, and a deal created with attachments filed."
+        desc="Forward pitch emails to your VentureLabs address — or pipe inbound via webhook. Every message is deduped, its company detected, and a deal created with attachments filed."
         points={[
           "Plain forwarding or SES-compatible webhooks",
           "Duplicate emails collapse automatically",
@@ -799,7 +799,7 @@ function Features() {
       <FeatureRow
         n="02"
         title="Decks become permanent files"
-        desc="Paste a DocSend, Pitch, Google Drive or Canva link and Copyr produces a permanent PDF attached to the company record. Drop up to a hundred PDFs at once — they parse while you sleep."
+        desc="Paste a DocSend, Pitch, Google Drive or Canva link and VentureLabs produces a permanent PDF attached to the company record. Drop up to a hundred PDFs at once — they parse while you sleep."
         points={[
           "Links never expire again — the material is yours",
           "Bulk upload with automatic parsing",
@@ -851,7 +851,7 @@ function Features() {
       <FeatureRow
         n="07"
         title="Relationship intelligence"
-        desc="Copyr builds a graph from your correspondence: who on the team has talked to which company, how often, and when they went quiet — warm paths surface before cold outreach does."
+        desc="VentureLabs builds a graph from your correspondence: who on the team has talked to which company, how often, and when they went quiet — warm paths surface before cold outreach does."
         visual={<RelMock />}
       />
       <FeatureRow
@@ -884,14 +884,14 @@ function AgentsSection() {
               Operated by agents, not just humans.
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-paper-400">
-              The UI is just one client of the Copyr core. A full MCP server exposes everything it can do —
+              The UI is just one client of the VentureLabs core. A full MCP server exposes everything it can do —
               so Claude, GPT or your own agents triage the inbox, move deals and draft reviews with the same
               tools your team uses.
             </p>
             <ul className="mt-7 space-y-2.5 text-sm text-paper-300">
                 {[
                   "105 tools over stdio or streamable HTTP at /mcp — full create/read/update/delete on every entity",
-                  "Resources like copyr://deals/{id}, prompts like company-deep-dive",
+                  "Resources for deals, vaults, spaces and agents; prompts like company-deep-dive",
                   "Admin surfaces: API keys, intake forms, webhooks, share links",
                   "REST /api/v1 with OpenAPI spec & Zapier-compatible webhooks",
                   "Workspace-scoped API keys for every agent",
@@ -912,7 +912,7 @@ function AgentsSection() {
                 <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-relaxed text-paper-200 dark:text-paper-800">
 {`{
   "mcpServers": {
-    "copyr": {
+    "venturelabs": {
       "command": "pnpm",
       "args": ["--filter @copyr/mcp", "run", "stdio"],
       "env": {
@@ -940,7 +940,7 @@ function AgentsSection() {
               <IconBot width={18} height={18} />
             </span>
             <p className="text-sm leading-relaxed text-paper-400">
-              Point any MCP client at Copyr and watch it work the pipeline end to end —
+              Point any MCP client at VentureLabs and watch it work the pipeline end to end —
               the seeded demo firm responds to agents exactly like production.
             </p>
           </div>
@@ -981,7 +981,7 @@ function SecuritySection() {
             <div className="space-y-4 p-5">
               <div className="flex items-center gap-2 rounded-lg border border-paper-900/25 bg-paper-50 px-3 py-2.5">
                 <IconLink width={14} height={14} className="shrink-0 text-paper-600" />
-                <span className="truncate font-mono text-xs font-medium text-paper-900">copyr.dev/s/nimbus-7fk2</span>
+                <span className="truncate font-mono text-xs font-medium text-paper-900">venturelabs.vercel.app/s/nimbus-7fk2</span>
                 <span className="ml-auto shrink-0 text-[11px] font-bold uppercase tracking-wider text-emerald-700">live</span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
@@ -1022,7 +1022,7 @@ function SecuritySection() {
 function Quotes() {
   const quotes: Array<[string, string, string]> = [
     [
-      "We pointed our deal email at Copyr on a Friday. By Monday the entire pipeline existed — nobody typed a single field.",
+      "We pointed our deal email at VentureLabs on a Friday. By Monday the entire pipeline existed — nobody typed a single field.",
       "General Partner",
       "$40M early-stage fund",
     ],
@@ -1155,11 +1155,11 @@ function Pricing() {
 
 function Faq() {
   const faqs: Array<[string, string]> = [
-    ["How does the email integration work?", "Forward pitch emails to your Copyr address (or connect via webhook). Every inbound email is deduped, triaged by AI, and turned into a fully populated deal — attachments included."],
-    ["Does it work with DocSend links?", "Yes. Paste any DocSend, Pitch, Google Drive or Canva link and Copyr produces a permanent PDF copy attached to the company record, so the material is yours even after the link expires."],
+    ["How does the email integration work?", "Forward pitch emails to your VentureLabs address (or connect via webhook). Every inbound email is deduped, triaged by AI, and turned into a fully populated deal — attachments included."],
+    ["Does it work with DocSend links?", "Yes. Paste any DocSend, Pitch, Google Drive or Canva link and VentureLabs produces a permanent PDF copy attached to the company record, so the material is yours even after the link expires."],
     ["What can the AI extract?", "Anything you define: sector, geography, team size, ARR, growth, check size, conviction — your custom fields become extraction targets automatically."],
     ["How do AI credits work?", "Every plan includes 500 AI credits per user per month. Extraction, triage, classification and memo generation draw down the balance; top-ups are available pay-as-you-go."],
-    ["Can AI agents operate my CRM?", "That's the point. Copyr ships with a full MCP server — 105 tools covering everything the UI can do and more — so Claude, GPT or your own agents can run triage, updates, diligence vaults and reviews."],
+    ["Can AI agents operate my CRM?", "That's the point. VentureLabs ships with a full MCP server — 105 tools covering everything the UI can do and more — so Claude, GPT or your own agents can run triage, updates, diligence vaults and reviews."],
     ["Is my data secure?", "Each firm's data lives in an isolated workspace. Files are stored privately behind signed URLs, every change is audited, and you can export everything at any time."],
   ];
   const [open, setOpen] = useState<number | null>(0);
@@ -1226,7 +1226,7 @@ function FinalCta() {
 function Footer() {
   const cols: Array<[string, Array<[string, string]>]> = [
     ["Resources", [["Blog", "/blog"], ["Changelog", "/changelog"]]],
-    ["Company", [["About", "/about"], ["Pricing", "#pricing"], ["Contact", "mailto:support@copyr.dev"]]],
+    ["Company", [["About", "/about"], ["Pricing", "#pricing"], ["Contact", "mailto:support@venturelabs.vercel.app"]]],
     ["Legal", [["Privacy policy", "/privacy-policy"], ["Terms of service", "/terms-of-service"], ["Cookie policy", "/cookie-policy"]]],
   ];
   return (
@@ -1262,14 +1262,14 @@ function Footer() {
             <div>
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-paper-500">For agents</p>
               <ul className="space-y-2 text-paper-600">
-                <li><code className="rounded-md border border-paper-900/10 bg-white px-1.5 py-0.5 font-mono text-xs">mcp://copyr</code></li>
+                <li><code className="rounded-md border border-paper-900/10 bg-white px-1.5 py-0.5 font-mono text-xs">mcp://venturelabs</code></li>
                 <li><Link to="/app/settings" className="transition hover:text-paper-900">API keys</Link></li>
               </ul>
             </div>
           </div>
         </div>
         <p className="mt-12 border-t border-paper-900/[0.08] pt-6 text-xs text-paper-400">
-          © 2026 Copyr. All rights reserved.
+          © 2026 VentureLabs. Temporary Venture Labs demo.
         </p>
       </div>
     </footer>

@@ -79,7 +79,7 @@ export default function Analytics() {
         <section ref={funnelRef} className="panel overflow-hidden">
           <div className="flex items-center justify-between border-b border-paper-900/[0.07] bg-paper-100/70 px-3.5 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-paper-600">Pipeline by stage</p>
-            <button onClick={() => exportChartPng(funnelRef.current, "copyr-pipeline-by-stage.png")} className="text-[11px] font-medium text-brand-600 hover:underline">⬇ PNG</button>
+            <button onClick={() => exportChartPng(funnelRef.current, "venturelabs-pipeline-by-stage.png")} className="text-[11px] font-medium text-brand-600 hover:underline">⬇ PNG</button>
             <p className="text-xs text-paper-400">deal count per stage, in your stage colors</p>
           </div>
           <div className="p-3 pr-4 text-paper-500">

@@ -1,6 +1,6 @@
-# Copyr
+# VentureLabs
 
-**AI-native operating platform for venture capital** — deal flow, diligence, and
+Temporary Venture Labs demo of an **AI-native operating platform for venture capital** — deal flow, diligence, and
 portfolio operations in one system. Every capability is exposed to AI agents via MCP;
 the React UI is just another client of the same core.
 
@@ -54,7 +54,7 @@ cited research reports.
 ```json
 {
   "mcpServers": {
-    "copyr": {
+    "venturelabs": {
       "command": "pnpm",
       "args": ["--dir", "/path/to/copyr", "--filter", "@copyr/mcp", "run", "stdio"],
       "env": { "COPYR_WORKSPACE_SLUG": "harbor-ventures" }

@@ -134,7 +134,7 @@ async function main() {
 
   const port = Number(process.env.MCP_HTTP_PORT ?? 4200);
   await app.listen({ port, host: "0.0.0.0" });
-  console.log(`Copyr MCP (streamable HTTP) listening on http://localhost:${port}/mcp`);
+  console.log(`VentureLabs MCP (streamable HTTP) listening on http://localhost:${port}/mcp`);
 }
 
 main().catch((err) => {

@@ -114,7 +114,7 @@ export default function Inbox() {
         <EmptyState
           icon={<IconInbox width={16} height={16} />}
           title="Inbox zero"
-          hint="Forward pitch emails to your Copyr address — or hit simulate to try the pipeline."
+          hint="Forward pitch emails to your VentureLabs address — or hit simulate to try the pipeline."
           action={<Button size="sm" onClick={() => simulate.mutate()}>Simulate inbound email</Button>}
         />
       ) : (

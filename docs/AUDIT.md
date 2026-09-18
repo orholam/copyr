@@ -1,4 +1,4 @@
-# Roulette ↔ Copyr parity audit
+# Roulette ↔ VentureLabs parity audit
 
 Sources audited: `/` (landing), `/features`, `/blog` (+ post topics), `/changelog`,
 `/auth/sign-in`, `/auth/sign-up`, `/auth/password-reset` (linked),
@@ -103,7 +103,7 @@ Every pitch on the landing page was verified against the running app:
 | "Parse pitch decks" / "Auto-fill CRM fields" | ✅ schema-driven extraction |
 | "Extract company data" / "Draft investment memos" | ✅ thesis generation |
 | "Track communications" / "Relationship intelligence" | ✅ relationships graph + team connections card |
-| "Forward emails" / "your Copyr address" | ✅ **NEW:** workspace inbound address shown in Settings → Integrations |
+| "Forward emails" / "your VentureLabs address" | ✅ **NEW:** workspace inbound address shown in Settings → Integrations |
 | "Manage pipeline" / board + table | ✅ |
 | "Custom attributes" | ✅ field builder |
 | "Team collaboration" | ✅ presence avatars + @mentions |
