@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { memberships, users as usersTable } from "@copyr/db/schema.js";
+import { SignJWT } from "jose";
+import { randomUUID } from "node:crypto";
+import { memberships, users as usersTable, workspaces } from "@copyr/db/schema.js";
 import {
   assertPermission,
   memberPermissions,
@@ -10,6 +12,8 @@ import {
 import { CoreError } from "./context.js";
 import type { Session } from "./context.js";
 import { cleanupWorkspace, getTestDb, seedWorkspace, type WsFixture } from "./test-db.js";
+
+const JWT_SECRET = "workspace-service-test-jwt-secret!!";
 
 const db = await getTestDb();
 
@@ -40,6 +44,21 @@ describe.skipIf(db === null)("workspace service (integration)", () => {
       const coreErr = err as CoreError;
       expect(coreErr.status).toBe(404);
       expect(coreErr.code).toBe("no_workspace");
+    });
+
+    it("rejects slug-only auth when ALLOW_DEV_WORKSPACE_AUTH is off", async () => {
+      const previous = fx.ctx.config.ALLOW_DEV_WORKSPACE_AUTH;
+      fx.ctx.config.ALLOW_DEV_WORKSPACE_AUTH = false;
+      try {
+        const err = await resolveSession(fx.ctx, { workspaceSlug: fx.workspaceSlug }).catch(
+          (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(CoreError);
+        expect((err as CoreError).code).toBe("unauthorized");
+        expect((err as CoreError).status).toBe(401);
+      } finally {
+        fx.ctx.config.ALLOW_DEV_WORKSPACE_AUTH = previous;
+      }
     });
   });
 
@@ -152,6 +171,84 @@ describe.skipIf(db === null)("workspace service (integration)", () => {
         expect([...perms]).toEqual([]);
       } finally {
         await fx.db.delete(usersTable).where(eq(usersTable.id, outsider.id));
+      }
+    });
+  });
+
+  describe("supabase JWT sessions", () => {
+    async function tokenFor(opts: {
+      sub?: string;
+      email: string;
+      name?: string;
+      firm?: string;
+    }): Promise<{ token: string; sub: string }> {
+      const sub = opts.sub ?? randomUUID();
+      const token = await new SignJWT({
+        email: opts.email,
+        role: "authenticated",
+        user_metadata: {
+          ...(opts.name ? { full_name: opts.name } : {}),
+          ...(opts.firm ? { firm_name: opts.firm } : {}),
+        },
+      })
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setSubject(sub)
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(JWT_SECRET));
+      return { token, sub };
+    }
+
+    beforeAll(() => {
+      fx.ctx.config.SUPABASE_JWT_SECRET = JWT_SECRET;
+      fx.ctx.config.ALLOW_DEV_WORKSPACE_AUTH = false;
+    });
+
+    it("maps a JWT to an existing membership and ignores a non-member slug hint", async () => {
+      const owner = (
+        await fx.db.select().from(usersTable).where(eq(usersTable.id, fx.userIds.owner))
+      )[0]!;
+      const { token } = await tokenFor({ sub: owner.id, email: owner.email });
+      const session = await resolveSession(fx.ctx, {
+        accessToken: token,
+        workspaceSlug: "not-a-workspace",
+      });
+      expect(session.workspaceId).toBe(fx.workspaceId);
+      expect(session.actor.userId).toBe(owner.id);
+    });
+
+    it("provisions a workspace + owner membership on first signup", async () => {
+      const email = `new-${randomUUID().slice(0, 8)}@copyr.dev`;
+      const { token, sub } = await tokenFor({
+        email,
+        name: "Ada Lovelace",
+        firm: "Analytical Engines",
+      });
+      const session = await resolveSession(fx.ctx, { accessToken: token });
+      expect(session.actor.userId).toBe(sub);
+      expect(session.workspaceSlug).toMatch(/^analytical-engines/);
+      const [member] = await fx.db
+        .select()
+        .from(memberships)
+        .where(eq(memberships.userId, sub));
+      expect(member?.role).toBe("owner");
+      const again = await resolveSession(fx.ctx, { accessToken: token });
+      expect(again.workspaceId).toBe(session.workspaceId);
+      await fx.db.delete(workspaces).where(eq(workspaces.id, session.workspaceId));
+      await fx.db.delete(usersTable).where(eq(usersTable.id, sub));
+    });
+
+    it("rejects a forged token", async () => {
+      const { token } = await tokenFor({ email: "forge@copyr.dev" });
+      const previous = fx.ctx.config.SUPABASE_JWT_SECRET;
+      fx.ctx.config.SUPABASE_JWT_SECRET = "definitely-not-the-signing-secret!!";
+      try {
+        await expect(resolveSession(fx.ctx, { accessToken: token })).rejects.toMatchObject({
+          code: "unauthorized",
+          status: 401,
+        });
+      } finally {
+        fx.ctx.config.SUPABASE_JWT_SECRET = previous;
       }
     });
   });

@@ -24,7 +24,7 @@
 | Portfolio | Portco update timelines from emails | `portfolio_updates` + classifier job |
 | Relationships | Who on the team talked to which company | `relationships` derived from inbound/outbound email graph |
 | Sharing | Share links: selective attrs, password, expiry, access logs, editable | `share_links` + `share_views`, public viewer page |
-| Team | Workspaces, roles, collaboration | workspaces/memberships (auth deferred to Supabase) |
+| Team | Workspaces, roles, collaboration | workspaces/memberships; Supabase email+password JWT |
 | Credits | 500 AI credits/user/month | `credit_ledger` with grants + metered spends |
 | API | Full API + Zapier | REST /api/v1 + OpenAPI + webhooks + **MCP server** (better than Zapier) |
 
@@ -110,9 +110,11 @@ Notable mechanics:
 
 ## 7. Auth posture
 
-Deferred by design. Today: `X-API-Key` header (workspace-scoped `api_keys` table) +
-dev default workspace resolution. Supabase JWT integration lands later; the API
-auth layer is isolated in one hook so swapping providers is a one-file change.
+Humans: Supabase Auth **email + password** (`Authorization: Bearer <access_token>`).
+The swap point is `resolveSession()` in `packages/core/src/services/workspace.ts`:
+verify JWT → map `auth.users` id/email onto `users` + `memberships` → provision a
+workspace on first signup. Agents keep `X-API-Key`. Production does **not** accept
+slug-only `X-Workspace-Slug` (`ALLOW_DEV_WORKSPACE_AUTH` defaults off).
 
 ## 8. Deployment target (when ready)
 

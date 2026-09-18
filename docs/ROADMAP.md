@@ -65,6 +65,6 @@ Multi-session build plan. Each phase ends with a working, verifiable system.
 - [x] ESLint (flat config, typescript-eslint) across all packages
 - [x] E2E suites in-repo (`pnpm e2e`, `pnpm e2e:b`) + MCP stdio smoke test
 - [x] Workflow/automation engine v1 + outbound webhooks (see docs/AUDIT.md phase-3 table)
-- [ ] Supabase auth integration (swap point isolated in `resolveSession`)
+- [x] Supabase auth integration (swap point isolated in `resolveSession`)
 - [ ] IaC (CDK or Terraform), OTel tracing, alerting
 - [x] Supabase Postgres + Storage wiring + Vercel/Render demo deploy path (`docs/DEPLOY.md`)

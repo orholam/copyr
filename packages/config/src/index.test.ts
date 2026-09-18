@@ -67,6 +67,41 @@ describe("loadConfig", () => {
     expect(cfg.AUTO_MIGRATE).toBe(false);
     expect(cfg.CORS_ALLOW_VERCEL_PREVIEWS).toBe(false);
   });
+
+  it("defaults ALLOW_DEV_WORKSPACE_AUTH off in production and on otherwise", () => {
+    expect(loadConfig({ NODE_ENV: "production" }).ALLOW_DEV_WORKSPACE_AUTH).toBe(false);
+    expect(loadConfig({ NODE_ENV: "test" }).ALLOW_DEV_WORKSPACE_AUTH).toBe(true);
+    expect(loadConfig({ NODE_ENV: "development" }).ALLOW_DEV_WORKSPACE_AUTH).toBe(true);
+  });
+
+  it("honors an explicit ALLOW_DEV_WORKSPACE_AUTH override", () => {
+    expect(
+      loadConfig({ NODE_ENV: "production", ALLOW_DEV_WORKSPACE_AUTH: "true" }).ALLOW_DEV_WORKSPACE_AUTH,
+    ).toBe(true);
+    expect(
+      loadConfig({ NODE_ENV: "test", ALLOW_DEV_WORKSPACE_AUTH: "0" }).ALLOW_DEV_WORKSPACE_AUTH,
+    ).toBe(false);
+  });
+
+  it("treats blank supabase auth secrets as unset", () => {
+    const cfg = loadConfig({
+      NODE_ENV: "test",
+      SUPABASE_URL: "",
+      SUPABASE_ANON_KEY: "",
+      SUPABASE_JWT_SECRET: "",
+    });
+    expect(cfg.SUPABASE_URL).toBeUndefined();
+    expect(cfg.SUPABASE_ANON_KEY).toBeUndefined();
+    expect(cfg.SUPABASE_JWT_SECRET).toBeUndefined();
+  });
+
+  it("accepts the venlabs-demo supabase url", () => {
+    const cfg = loadConfig({
+      NODE_ENV: "test",
+      SUPABASE_URL: "https://cdsngnauduhiaidzncie.supabase.co",
+    });
+    expect(cfg.SUPABASE_URL).toBe("https://cdsngnauduhiaidzncie.supabase.co");
+  });
 });
 
 describe("isAllowedCorsOrigin", () => {

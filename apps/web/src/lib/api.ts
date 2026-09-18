@@ -1,5 +1,7 @@
 /** Thin typed API client for the Copyr REST API. */
 
+import { getAccessToken, isAuthRequired } from "./supabase";
+
 /** Absolute API origin in split deploys (Vercel web + Render API). Empty = same origin. */
 export function apiUrl(path: string): string {
   const origin = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -8,8 +10,31 @@ export function apiUrl(path: string): string {
 }
 
 const BASE = apiUrl("/api/v1");
+const WS_STORAGE_KEY = "copyr-workspace-slug";
+
 export const WORKSPACE_SLUG =
   (import.meta.env.VITE_WORKSPACE_SLUG as string | undefined) ?? "harbor-ventures";
+
+export function getWorkspaceSlug(): string | undefined {
+  try {
+    const stored = localStorage.getItem(WS_STORAGE_KEY);
+    if (stored) return stored;
+  } catch {
+    /* private mode */
+  }
+  const fromEnv = import.meta.env.VITE_WORKSPACE_SLUG as string | undefined;
+  if (fromEnv) return fromEnv;
+  if (!isAuthRequired()) return WORKSPACE_SLUG;
+  return undefined;
+}
+
+export function rememberWorkspaceSlug(slug: string): void {
+  try {
+    localStorage.setItem(WS_STORAGE_KEY, slug);
+  } catch {
+    /* ignore */
+  }
+}
 
 export class ApiError extends Error {
   status: number;
@@ -23,15 +48,33 @@ export class ApiError extends Error {
   }
 }
 
+export async function apiHeaders(init?: HeadersInit): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  const token = await getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const slug = getWorkspaceSlug();
+  if (slug) headers["x-workspace-slug"] = slug;
+  if (init) {
+    const extra = new Headers(init);
+    extra.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  return headers;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = await apiHeaders(init?.headers);
+  if (init?.body && !headers["content-type"] && !headers["Content-Type"]) {
+    headers["content-type"] = "application/json";
+  }
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: {
-      ...(init?.body ? { "content-type": "application/json" } : {}),
-      "x-workspace-slug": WORKSPACE_SLUG,
-      ...init?.headers,
-    },
+    headers,
   });
+  if (res.status === 401 && headers.Authorization) {
+    window.dispatchEvent(new Event("copyr:auth-expired"));
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(res.status, body);
@@ -55,12 +98,10 @@ export const api = {
     body: unknown,
     onEvent: (evt: Record<string, unknown> & { type: string }) => void,
   ) {
+    const headers = await apiHeaders({ "content-type": "application/json" });
     const res = await fetch(`${BASE}${path}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-workspace-slug": WORKSPACE_SLUG,
-      },
+      headers,
       body: JSON.stringify(body ?? {}),
     });
     if (!res.ok || !res.body) {
@@ -98,10 +139,11 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
+    const headers = await apiHeaders();
     const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ""}`, {
       method: "POST",
       body: fd,
-      headers: { "x-workspace-slug": WORKSPACE_SLUG },
+      headers,
     });
     if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => ({ error: "upload failed" })));
     return res.json() as Promise<unknown>;

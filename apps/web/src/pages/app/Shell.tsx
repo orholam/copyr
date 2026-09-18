@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, useOutlet, useLocation } from "react-router-dom";
+import { NavLink, useOutlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cx, Avatar } from "../../components/ui";
 import { ThemeToggle, useTheme } from "../../lib/theme";
@@ -19,7 +19,8 @@ import {
 } from "../../components/icons";
 import { CommandPalette, type SearchFilter } from "../../components/CommandPalette";
 import { useRealtime } from "../../lib/sse";
-import { api, WORKSPACE_SLUG } from "../../lib/api";
+import { api, WORKSPACE_SLUG, rememberWorkspaceSlug } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import AddCompanyModal from "./AddCompanyModal";
 
 const NAV = [
@@ -51,12 +52,14 @@ const NAV = [
 
 interface Me {
   workspace: { id: string; name: string; slug: string; plan: string; aiCreditsBalance: number; members: Array<{ id: string; name: string; title?: string | null; role: string }> };
-  actor: { userId: string; source: string };
+  actor: { userId: string | null; source: string };
 }
 
 export default function AppShell() {
   const outlet = useOutlet();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const isAssistantRoute = location.pathname === "/app";
   const [showAdd, setShowAdd] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -67,9 +70,15 @@ export default function AppShell() {
 
   const meQ = useQuery({ queryKey: ["me"], queryFn: () => api.get<Me>("/me") });
   const ws = meQ.data?.workspace;
+  const self = ws?.members.find((m) => m.id === meQ.data?.actor.userId);
   const owner = ws?.members.find((m) => m.role === "owner");
   const credits = ws?.aiCreditsBalance ?? 0;
   const creditPct = Math.max(3, Math.min(100, Math.round((credits / 500) * 100)));
+  const display = self ?? owner;
+
+  useEffect(() => {
+    if (ws?.slug) rememberWorkspaceSlug(ws.slug);
+  }, [ws?.slug]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -201,13 +210,24 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-2 px-1 pb-1 pt-0.5">
-            <Avatar name={owner?.name ?? "Harbor VC"} size={24} />
+            <Avatar name={display?.name ?? user?.email ?? "You"} size={24} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium leading-4 text-paper-900">{owner?.name ?? "—"}</p>
+              <p className="truncate text-xs font-medium leading-4 text-paper-900">
+                {display?.name ?? user?.email ?? "—"}
+              </p>
               <p className="truncate text-[10px] leading-[13px] text-paper-500">
-                {owner?.title ?? owner?.role ?? "member"}
+                {display?.title ?? display?.role ?? "member"}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                void signOut().then(() => navigate("/auth/sign-in"));
+              }}
+              className="shrink-0 text-[10px] font-medium text-paper-500 hover:text-paper-900"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </aside>

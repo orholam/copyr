@@ -116,7 +116,9 @@ export function buildOpenApi(): Record<string, unknown> {
       version: "1.0.0",
       description:
         "AI-native deal-flow CRM for venture capital. " +
-        "Authenticate with X-API-Key (agent access) or X-Workspace-Slug (dev). " +
+        "Authenticate with Authorization: Bearer <Supabase access token> (humans) " +
+        "or X-API-Key (agents). X-Workspace-Slug selects among a user's workspaces " +
+        "when a JWT is present; slug-only auth is development-only. " +
         "All list endpoints accept limit/offset. Automations, ingestion and AI " +
         "endpoints consume workspace AI credits where noted.",
     },
