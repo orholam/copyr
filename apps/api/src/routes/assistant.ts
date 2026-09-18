@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { sendMessageSchema } from "@copyr/contracts";
+import { startHijackedSse } from "../sse-cors.js";
 
 const uuid = z.string().uuid();
 
@@ -37,14 +38,7 @@ const routes: FastifyPluginAsync = async (app) => {
     const host = (app as unknown as { assistantToolHost?: import("@copyr/core").AssistantToolHost })
       .assistantToolHost;
 
-    reply.hijack();
-    const raw = reply.raw;
-    raw.writeHead(200, {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    });
+    const raw = startHijackedSse(req, reply);
     const send = (evt: Record<string, unknown> & { type: string }) => {
       raw.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt)}\n\n`);
     };

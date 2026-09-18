@@ -203,5 +203,79 @@ describe("api", () => {
       expect(permissions).toContain("manage_billing");
       expect(permissions).toContain("manage_pipeline");
     });
+
+    it("includes Allow-Origin on hijacked SSE for an allowed Origin", async ({ skip }) => {
+      if (!dbUp) skip();
+      const origin = "http://localhost:5173";
+
+      const events = await app.inject({
+        method: "GET",
+        url: "/api/v1/events",
+        headers: { ...headers, origin, accept: "text/event-stream" },
+        payloadAsStream: true,
+      });
+      try {
+        expect(events.statusCode).toBe(200);
+        expect(String(events.headers["content-type"] ?? "")).toContain("text/event-stream");
+        expect(events.headers["access-control-allow-origin"]).toBe(origin);
+        expect(events.headers["access-control-allow-credentials"]).toBe("true");
+        expect(String(events.headers.vary ?? "")).toMatch(/origin/i);
+      } finally {
+        events.raw.res.destroy();
+      }
+
+      const stream = await app.inject({
+        method: "POST",
+        url: "/api/v1/assistant/messages/stream",
+        headers: {
+          ...headers,
+          origin,
+          "content-type": "application/json",
+          accept: "text/event-stream",
+        },
+        payload: { content: "hello" },
+      });
+      expect(stream.statusCode).toBe(200);
+      expect(String(stream.headers["content-type"] ?? "")).toContain("text/event-stream");
+      expect(stream.headers["access-control-allow-origin"]).toBe(origin);
+      expect(stream.headers["access-control-allow-credentials"]).toBe("true");
+      expect(stream.headers["access-control-allow-origin"]).not.toBe("*");
+    });
+
+    it("omits Allow-Origin on hijacked SSE for a disallowed origin", async ({ skip }) => {
+      if (!dbUp) skip();
+      const origin = "https://evil.example";
+
+      const events = await app.inject({
+        method: "GET",
+        url: "/api/v1/events",
+        headers: { ...headers, origin, accept: "text/event-stream" },
+        payloadAsStream: true,
+      });
+      try {
+        expect(events.statusCode).toBe(200);
+        expect(String(events.headers["content-type"] ?? "")).toContain("text/event-stream");
+        expect(events.headers["access-control-allow-origin"]).toBeUndefined();
+        expect(events.headers["access-control-allow-credentials"]).toBeUndefined();
+      } finally {
+        events.raw.res.destroy();
+      }
+
+      const stream = await app.inject({
+        method: "POST",
+        url: "/api/v1/assistant/messages/stream",
+        headers: {
+          ...headers,
+          origin,
+          "content-type": "application/json",
+          accept: "text/event-stream",
+        },
+        payload: { content: "hello" },
+      });
+      expect(stream.statusCode).toBe(200);
+      expect(String(stream.headers["content-type"] ?? "")).toContain("text/event-stream");
+      expect(stream.headers["access-control-allow-origin"]).toBeUndefined();
+      expect(stream.headers["access-control-allow-credentials"]).toBeUndefined();
+    });
   });
 });
