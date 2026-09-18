@@ -350,6 +350,7 @@ export const messageDto = z.object({
   content: z.string(),
   toolCalls: z.array(assistantToolCallSchema).nullish(),
   toolName: z.string().nullish(),
+  toolArgs: z.record(z.string(), z.unknown()).nullish(),
   ok: z.boolean().nullish(),
   position: z.number().int(),
   createdAt: z.string(),

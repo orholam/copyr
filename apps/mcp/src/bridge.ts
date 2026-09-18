@@ -14,7 +14,7 @@ import { runWithSession } from "./session.js";
  * call runs inside the caller's session so tenant isolation is preserved.
  */
 export interface AssistantToolHost {
-  listTools(): Promise<Array<{ name: string; description: string }>>;
+  listTools(): Promise<Array<{ name: string; description: string; inputSchema?: Record<string, unknown> }>>;
   call(name: string, args: Record<string, unknown>, session: Session): Promise<unknown>;
 }
 
@@ -34,7 +34,11 @@ export async function createAssistantMcpBridge(core: Core): Promise<AssistantToo
     async listTools() {
       const res = await client.listTools();
       return res.tools
-        .map((t) => ({ name: t.name, description: t.description ?? "" }))
+        .map((t) => ({
+          name: t.name,
+          description: t.description ?? "",
+          inputSchema: (t.inputSchema ?? undefined) as Record<string, unknown> | undefined,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name));
     },
 
