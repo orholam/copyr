@@ -225,6 +225,8 @@ export const roundStageEnum = z.enum([
 export const createDealSchema = z.object({
   companyId: idSchema.optional(),
   companyName: z.string().min(1).optional(),
+  /** Alias of companyName — models often pass `name` like create_company. */
+  name: z.string().min(1).optional(),
   pipelineId: idSchema.optional(),
   stageId: idSchema.optional(),
   ownerUserId: idSchema.nullable().optional(),
@@ -238,7 +240,23 @@ export const createDealSchema = z.object({
   sourceRef: z.string().optional(),
   fields: z.record(z.string(), fieldValuePrimitive).optional(),
 });
-export type CreateDealInput = z.infer<typeof createDealSchema>;
+
+/** Parse create-deal input, mapping `name` → companyName and requiring an identity. */
+export const createDealInputSchema = createDealSchema
+  .superRefine((d, ctx) => {
+    if (!d.companyId && !(d.companyName ?? d.name ?? d.title)?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "companyId or companyName required",
+        path: ["companyName"],
+      });
+    }
+  })
+  .transform((d) => ({
+    ...d,
+    companyName: d.companyName ?? d.name ?? d.title,
+  }));
+export type CreateDealInput = z.infer<typeof createDealInputSchema>;
 
 export const updateDealSchema = z.object({
   stageId: idSchema.optional(),

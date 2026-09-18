@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { conversations, messages } from "@copyr/db/schema.js";
 import type { ConversationDto, MessageDto } from "@copyr/contracts";
-import { requiredArgNames, type AssistantToolSpec } from "@copyr/ai";
+import { requiredArgNames, fillMissingToolArgs, missingRequiredArgs, type AssistantToolSpec } from "@copyr/ai";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
@@ -21,6 +21,7 @@ type ToolExec = (ctx: CoreContext, session: Session, args: Record<string, unknow
 interface ToolDef {
   description: string;
   exec: ToolExec;
+  inputSchema?: Record<string, unknown>;
 }
 
 /** Curated toolset — read-heavy plus a few safe write actions. */
@@ -33,7 +34,16 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
     },
   },
   list_deals: {
-    description: "List deals; supports q, limit, sort (updated_at|created_at|priority|position), order (asc|desc)",
+    description: "List pipeline cards (companies); supports q, limit, sort (updated_at|created_at|priority|position), order (asc|desc)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string" },
+        limit: { type: "number" },
+        sort: { type: "string" },
+        order: { type: "string" },
+      },
+    },
     exec: async (ctx, session, args) => {
       const { listDealsQuerySchema } = await import("@copyr/contracts");
       const q = listDealsQuerySchema.parse({
@@ -44,7 +54,9 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
       });
       const { items } = await import("./deals.js").then((m) => m.listDeals(ctx, session, q));
       return items.map((d) => ({
+        id: d.id,
         dealId: d.id,
+        companyId: d.companyId,
         companyName: d.company.name,
         title: d.title,
         roundStage: d.roundStage,
@@ -55,6 +67,10 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
   },
   search_companies: {
     description: "Search companies by name/domain/sector",
+    inputSchema: {
+      type: "object",
+      properties: { q: { type: "string" } },
+    },
     exec: async (ctx, session, args) => {
       const { listCompanies } = await import("./companies.js");
       return listCompanies(ctx, session, {
@@ -62,7 +78,14 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
         limit: 5,
         offset: 0,
       }).then((r) =>
-        r.items.map((c) => ({ companyId: c.id, name: c.name, sector: c.sector, status: c.status, description: c.description })),
+        r.items.map((c) => ({
+          id: c.id,
+          companyId: c.id,
+          name: c.name,
+          sector: c.sector,
+          status: c.status,
+          description: c.description,
+        })),
       );
     },
   },
@@ -161,6 +184,29 @@ export const ASSISTANT_TOOLS: Record<string, ToolDef> = {
       return { memoryId: m.id, remembered: m.content };
     },
   },
+  create_company: {
+    description:
+      "Create a company and put it on the default pipeline. Required: name. This is the Pipeline board card.",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: { type: "string" },
+        domain: { type: "string" },
+        sector: { type: "string" },
+        roundStage: { type: "string" },
+        askAmount: { type: "number" },
+      },
+    },
+    exec: async (ctx, session, args) => {
+      const { createCompanySchema } = await import("@copyr/contracts");
+      const input = createCompanySchema.parse({
+        ...args,
+        mergeWithExisting: args.mergeWithExisting ?? true,
+      });
+      return import("./companies.js").then((m) => m.createCompany(ctx, session, input));
+    },
+  },
 };
 
 /* ── tool host ─────────────────────────────────────────────────────── */
@@ -181,6 +227,7 @@ function builtinHost(ctx: CoreContext): AssistantToolHost {
       return Object.entries(ASSISTANT_TOOLS).map(([name, def]) => ({
         name,
         description: def.description,
+        inputSchema: def.inputSchema,
       }));
     },
     async call(name, args, session) {
@@ -390,20 +437,28 @@ async function runTurn(
       );
 
       for (const call of turn.toolCalls) {
-        emit?.({ type: "tool_start", name: call.name, args: call.args ?? {} });
+        const spec = toolSpecs.find((t) => t.name === call.name);
+        const lastUser = [...history].reverse().find((m) => m.role === "user");
+        const args = spec
+          ? fillMissingToolArgs(spec, call.args ?? {}, lastUser?.content ?? content)
+          : (call.args ?? {});
+        emit?.({ type: "tool_start", name: call.name, args });
         const t0 = Date.now();
         let ok = true;
         let resultText: string;
         try {
-          const result = await host.call(call.name, call.args ?? {}, session);
+          const missing = missingRequiredArgs(spec?.inputSchema, args);
+          if (missing.length) {
+            throw new Error(`Missing required arguments: ${missing.join(", ")}`);
+          }
+          const result = await host.call(call.name, args, session);
           resultText = JSON.stringify(compactToolResult(result)).slice(0, 6_000);
         } catch (err) {
           ok = false;
-          const spec = toolSpecs.find((t) => t.name === call.name);
           const required = requiredArgNames(spec?.inputSchema);
           resultText = JSON.stringify({
             error: err instanceof Error ? err.message : String(err),
-            receivedArgs: call.args ?? {},
+            receivedArgs: args,
             ...(required.length
               ? {
                   requiredArguments: required,
@@ -413,10 +468,10 @@ async function runTurn(
           }).slice(0, 2_000);
         }
         emit?.({ type: "tool_end", name: call.name, ok, ms: Date.now() - t0 });
-        await insertMessage("tool", resultText, { name: call.name, args: call.args ?? {}, ok });
+        await insertMessage("tool", resultText, { name: call.name, args, ok });
         history.push({
           role: "tool",
-          content: `${call.name}(${JSON.stringify(call.args ?? {})}) → ${resultText}`,
+          content: `${call.name}(${JSON.stringify(args)}) → ${resultText}`,
         });
       }
       continue;

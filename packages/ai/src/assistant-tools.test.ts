@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatToolCatalog, normalizeAssistantToolCalls, requiredArgNames } from "./assistant-tools.js";
+import {
+  extractCreateCompanyNames,
+  fillMissingToolArgs,
+  formatToolCatalog,
+  missingRequiredArgs,
+  normalizeAssistantToolCalls,
+  requiredArgNames,
+} from "./assistant-tools.js";
 
 const createCompanySpec = {
   name: "create_company",
@@ -81,5 +88,39 @@ describe("normalizeAssistantToolCalls", () => {
 
   it("drops unknown tools", () => {
     expect(normalizeAssistantToolCalls([{ name: "rm_rf", args: {} }], allowed)).toEqual([]);
+  });
+});
+
+describe("extractCreateCompanyNames", () => {
+  it("reads add-to-pipeline phrasing", () => {
+    expect(extractCreateCompanyNames("Add OpenAI to the pipeline")).toEqual(["OpenAI"]);
+    expect(extractCreateCompanyNames("Add OpenAI and Anthropic to the pipeline")).toEqual([
+      "OpenAI",
+      "Anthropic",
+    ]);
+  });
+
+  it("reads quoted names and create_company for X", () => {
+    expect(extractCreateCompanyNames('Create company "Nimbus Health"')).toEqual(["Nimbus Health"]);
+    expect(extractCreateCompanyNames("create_company for Stripe")).toEqual(["Stripe"]);
+  });
+});
+
+describe("fillMissingToolArgs / missingRequiredArgs", () => {
+  it("fills create_company name from the user message", () => {
+    expect(missingRequiredArgs(createCompanySpec.inputSchema, {})).toEqual(["name"]);
+    expect(
+      fillMissingToolArgs(createCompanySpec, {}, "Add OpenAI to the pipeline"),
+    ).toEqual({ name: "OpenAI" });
+  });
+
+  it("fills create_deal companyName even without a required array", () => {
+    expect(
+      fillMissingToolArgs(
+        { name: "create_deal", description: "alias" },
+        {},
+        "Add Anthropic to the pipeline",
+      ),
+    ).toEqual({ companyName: "Anthropic", name: "Anthropic" });
   });
 });
