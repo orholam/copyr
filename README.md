@@ -103,6 +103,7 @@ Real inbound email: point Mailpit's webhook (`docker-compose.yml`) or AWS SES at
 
 Design principles & data model: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 Production (Supabase + Vercel/Render): [`docs/DEPLOY.md`](docs/DEPLOY.md).
+VenLabs Vercel is Origin-git only: [`docs/ORIGIN.md`](docs/ORIGIN.md).
 
 ## Configuration
 
@@ -121,6 +122,9 @@ Shareable demo: Vite SPA on **Vercel** (`vercel.json` + `apps/web/vercel.json`) 
 **The API must be a separate host.** Fastify is not deployed as Vercel serverless
 (SSE, uploads, pg-boss workers). Vercel env is only `VITE_API_URL` + `VITE_WORKSPACE_SLUG`.
 Supabase `DATABASE_URL` / Storage S3 vars go on the API host — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+VenLabs Vercel imports **Cursor Origin** git, not GitHub. Playbook to mirror this
+tree (excluding `intelligence/`): [`docs/ORIGIN.md`](docs/ORIGIN.md).
 
 ## Status
 

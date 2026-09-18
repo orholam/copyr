@@ -8,7 +8,8 @@
 
 ## Ship now (Vercel SPA)
 
-1. Import `orholam/copyr` in Vercel.
+1. Import this repo in Vercel via **Continue with Origin** (VenLabs does not
+   import GitHub). Until an Origin copy exists, see [`docs/ORIGIN.md`](ORIGIN.md).
 2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
    - Empty → uses repo-root `vercel.json` (`outputDirectory: apps/web/dist`).
    - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
@@ -180,18 +181,11 @@ Optional MCP HTTP: `Dockerfile.mcp` with `pnpm --filter @copyr/mcp dev` / `src/h
 
 ### Web (Vercel)
 
-Root `vercel.json` builds `@copyr/web` and publishes `apps/web/dist`.
+**API is not on Vercel.** Root `vercel.json` (empty Root Directory) or `apps/web/vercel.json` (Root Directory `apps/web`) builds the SPA.
 
-1. Import `orholam/copyr` in Vercel (root directory = repo root).
-2. Framework: Other (override is in `vercel.json`).
-3. Build-time env:
-
-```bash
-VITE_API_URL=https://copyr-api.onrender.com
-VITE_WORKSPACE_SLUG=harbor-ventures
-```
-
-`VITE_API_URL` must be set at **build** time (Vite inlines it). Leave it unset for local `pnpm --filter @copyr/web dev` (Vite proxies `/api` to `:4100`).
+1. Import `orholam/copyr` in Vercel.
+2. Root Directory: empty **or** `apps/web`.
+3. Build-time env: `VITE_API_URL`, `VITE_WORKSPACE_SLUG` (see Ship now above).
 
 After the first Vercel URL exists, set `WEB_URL` on the API to that origin.
 
