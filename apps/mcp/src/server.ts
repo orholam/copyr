@@ -62,7 +62,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
     {
       instructions:
         "Copyr is an AI-native operating platform for venture funds: deal flow, diligence, and portfolio operations.\n" +
-        "Surfaces: (1) PIPELINE — pipelines/stages/deals/companies/contacts with custom fields; ingest pitch emails, deck links, " +
+        "Surfaces: (1) PIPELINE — companies sit on pipeline stages (a company IS the deal card); ingest pitch emails, deck links, " +
         "PDFs or public intake forms (AI triage + extraction run automatically). (2) VAULTS — bulk diligence: create_vault, add documents, then " +
         "create_review_table extracts structured rows with citations across every parsed document in one query. " +
         "(3) KNOWLEDGE — ask_knowledge answers questions grounded in workspace material with citations. " +
@@ -242,7 +242,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "create_deal",
-    "Create a deal. Pass companyId OR companyName (company auto-created/deduped). Custom fields via `fields` keyed by field key.",
+    "Create a deal — same as create_company. Pass companyId OR companyName. The company is the pipeline card (stage, round, ask). Custom fields via `fields`.",
     { ...createDealSchema.shape },
     tool(async (args) => {
       const input = createDealSchema.parse(args);
@@ -298,7 +298,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "create_company",
-    "Create a company. Required args: name. Optional: domain, sector, location, description, fields.",
+    "Create a company and put it on the default pipeline (first stage). Required: name. Optional: domain, sector, roundStage, askAmount. This is what appears on the Pipeline board — there is no separate deal record.",
     { ...createCompanySchema.shape },
     tool(async (args) => {
       const input = createCompanySchema.parse(args);

@@ -3,7 +3,6 @@ import {
   agentRuns,
   agents,
   companies,
-  deals,
   notes,
   spaces,
   tasks,
@@ -375,8 +374,7 @@ async function resolveCompanyId(
   run: typeof agentRuns.$inferSelect,
 ): Promise<string | null> {
   if (run.dealId) {
-    const [deal] = await ctx.db.select({ companyId: deals.companyId }).from(deals).where(eq(deals.id, run.dealId));
-    return deal?.companyId ?? null;
+    return run.dealId;
   }
   if (run.taskId) {
     const [task] = await ctx.db

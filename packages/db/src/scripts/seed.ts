@@ -8,7 +8,6 @@ import {
   pipelines,
   stages,
   companies,
-  deals,
   customFields,
   fieldValues,
   contacts,
@@ -114,23 +113,23 @@ async function main() {
         type: "number", position: 2,
       },
       {
-        workspaceId: wsId, target: "deal", key: "check_size", label: "Check Size",
+        workspaceId: wsId, target: "company", key: "check_size", label: "Check Size",
         type: "currency", position: 0,
       },
       {
-        workspaceId: wsId, target: "deal", key: "lead_partner", label: "Lead Partner",
+        workspaceId: wsId, target: "company", key: "lead_partner", label: "Lead Partner",
         type: "select", options: ["Sarah Kim", "Mike Torres", "Alex Rivera"], position: 1,
       },
       {
-        workspaceId: wsId, target: "deal", key: "team_quality", label: "Team Quality",
+        workspaceId: wsId, target: "company", key: "team_quality", label: "Team Quality",
         type: "select", options: ["A", "A-", "B+", "B", "C"], position: 2,
       },
       {
-        workspaceId: wsId, target: "deal", key: "conviction", label: "Conviction",
+        workspaceId: wsId, target: "company", key: "conviction", label: "Conviction",
         type: "select", options: ["High", "Medium", "Low"], position: 3,
       },
       {
-        workspaceId: wsId, target: "deal", key: "deck_url", label: "Deck Source",
+        workspaceId: wsId, target: "company", key: "deck_url", label: "Deck Source",
         type: "url", showInTable: false, aiExtractable: false, position: 4,
       },
     ])
@@ -183,18 +182,9 @@ async function main() {
         createdByUserId: cs.source === "manual" ? gp.id : null,
         createdAt: daysAgo(cs.ageDays),
         updatedAt: daysAgo(cs.ageDays),
-      })
-      .returning();
-
-    const [deal] = await db
-      .insert(deals)
-      .values({
-        workspaceId: wsId,
-        companyId: company.id,
         pipelineId: pipeline.id,
         stageId: stage[cs.stageName]!.id,
         ownerUserId: cs.owner.id,
-        title: `${cs.name} — ${cs.round}`,
         roundStage: cs.round,
         askAmount: cs.ask ?? null,
         position: (() => {
@@ -203,19 +193,17 @@ async function main() {
           stageLastPos.set(cs.stageName, next);
           return next;
         })(),
-        source: cs.source,
         sourceRef: cs.source === "email" ? `msg_${cs.domain}` : null,
-        createdByUserId: cs.owner.id,
-        createdAt: daysAgo(cs.ageDays),
-        updatedAt: daysAgo(cs.ageDays),
       })
       .returning();
+
+    const deal = company;
 
     await db.insert(fieldValues).values([
       { workspaceId: wsId, fieldId: field.sector!.id, entityType: "company", entityId: company.id, value: JSON.stringify(cs.sector), setByActor: "ai", confidence: "0.95" },
       { workspaceId: wsId, fieldId: field.geography!.id, entityType: "company", entityId: company.id, value: JSON.stringify(cs.geo), setByActor: "user" },
       { workspaceId: wsId, fieldId: field.employees!.id, entityType: "company", entityId: company.id, value: JSON.stringify(cs.employees), setByActor: "ai", confidence: "0.85" },
-      { workspaceId: wsId, fieldId: field.lead_partner!.id, entityType: "deal", entityId: deal.id, value: JSON.stringify(cs.owner.name), setByActor: "user" },
+      { workspaceId: wsId, fieldId: field.lead_partner!.id, entityType: "company", entityId: company.id, value: JSON.stringify(cs.owner.name), setByActor: "user" },
     ]);
 
     await db.insert(contacts).values({

@@ -50,6 +50,13 @@
       "when": 1787428127199,
       "tag": "0006_flimsy_reptil",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789754105600,
+      "tag": "0007_dapper_chamber",
+      "breakpoints": true
     }
   ]
 }

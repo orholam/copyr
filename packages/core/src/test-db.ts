@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb } from "@copyr/db";
-import { apiKeys, companies, deals, memberships, pipelines, stages, users, workspaces } from "@copyr/db/schema.js";
+import { apiKeys, companies, memberships, pipelines, stages, users, workspaces } from "@copyr/db/schema.js";
 import type { Database } from "@copyr/db";
 import { loadConfig } from "@copyr/config";
 import { ObjectStore } from "@copyr/storage";
@@ -115,16 +115,12 @@ export async function seedWorkspace(db: Database): Promise<WsFixture> {
 
   const [company] = await db
     .insert(companies)
-    .values({ workspaceId: ws.id, name: `Acme ${suffix}`, domain: `acme-${suffix}.test` })
-    .returning();
-  const [deal] = await db
-    .insert(deals)
     .values({
       workspaceId: ws.id,
-      companyId: company.id,
+      name: `Acme ${suffix}`,
+      domain: `acme-${suffix}.test`,
       pipelineId: pipeline.id,
       stageId: stageRows[0].id,
-      title: `Acme ${suffix} — Seed`,
       position: initialKey(),
     })
     .returning();
@@ -151,7 +147,7 @@ export async function seedWorkspace(db: Database): Promise<WsFixture> {
     pipelineId: pipeline.id,
     stageIds: { sourcing: stageRows[0].id, won: stageRows[1].id },
     companyId: company.id,
-    dealId: deal.id,
+    dealId: company.id,
   };
 }
 

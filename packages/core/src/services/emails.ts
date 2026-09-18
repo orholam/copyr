@@ -1,7 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
   companies,
-  deals,
   emailMessages,
   memberships,
   pipelines,
@@ -12,11 +11,11 @@ import {
 } from "@copyr/db/schema.js";
 import type { InboundEmailPayload, EmailDto } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
-import { generateKeyBetween } from "../fractional.js";
 import { mapEmail } from "../mappers.js";
 import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
-import { findCompanyMatch } from "./companies.js";
+import { findCompanyMatch, nextStagePosition } from "./companies.js";
+import { resolvePipelineStage } from "./pipelines.js";
 import { uploadDocument } from "./documents.js";
 
 const EMAIL_ACTOR: Session = { workspaceId: "", actor: { userId: null, source: "email" } };
@@ -241,6 +240,13 @@ export async function processEmailMessage(
           companyId = match.id;
           result.matchedCompanies.push(match.name);
         } else {
+          const roundGuess = /\b(pre-seed|seed|series [a-e])\b/i.exec(
+            `${email.subject}\n${email.bodyText}`,
+          );
+          const placement = intakeStage
+            ? { pipelineId: intakeStage.pipelineId, stage: intakeStage }
+            : await resolvePipelineStage(ctx, tx, workspaceId);
+          const position = await nextStagePosition(tx, placement.stage.id);
           const [company] = await tx
             .insert(companies)
             .values({
@@ -248,59 +254,32 @@ export async function processEmailMessage(
               name: detected.name,
               domain: detected.domain ?? null,
               source: "email",
+              pipelineId: placement.pipelineId,
+              stageId: placement.stage.id,
+              roundStage: roundGuess ? titleCase(roundGuess[1]!) : null,
+              sourceRef: email.messageId,
+              createdByUserId: teamMember?.userId ?? null,
+              position,
             })
             .returning();
           companyId = company!.id;
           result.createdCompanies.push(company!.name);
+          result.createdDeals.push(company!.id);
 
-          if (intakeStage) {
-            const roundGuess = /\b(pre-seed|seed|series [a-e])\b/i.exec(
-              `${email.subject}\n${email.bodyText}`,
-            );
-            const [{ maxPos }] = await tx
-              .select({ maxPos: sql<string | null>`max(${deals.position})` })
-              .from(deals)
-              .where(eq(deals.stageId, intakeStage.id));
-            const [deal] = await tx
-              .insert(deals)
-              .values({
-                workspaceId,
-                companyId,
-                pipelineId: intakeStage.pipelineId,
-                stageId: intakeStage.id,
-                title: `${company!.name}${roundGuess ? ` — ${titleCase(roundGuess[1]!)}` : ""}`,
-                roundStage: roundGuess ? titleCase(roundGuess[1]!) : null,
-                source: "email",
-                sourceRef: email.messageId,
-                createdByUserId: teamMember?.userId ?? null,
-                position: generateKeyBetween(maxPos, null),
-              })
-              .returning();
-            result.createdDeals.push(deal!.id);
-
-            await logActivity(ctx, tx, {
-              workspaceId,
-              entityType: "deal",
-              entityId: deal!.id,
-              companyId,
-              dealId: deal!.id,
-              type: "deal.created",
-              summary: `Deal created from inbound email`,
-              actor: "system",
-              data: { emailId, from: email.fromEmail },
-            });
-          }
+          await logActivity(ctx, tx, {
+            workspaceId,
+            entityType: "deal",
+            entityId: company!.id,
+            companyId,
+            dealId: company!.id,
+            type: "deal.created",
+            summary: `Deal created from inbound email`,
+            actor: "system",
+            data: { emailId, from: email.fromEmail },
+          });
         }
 
-        const firstDealForCompany =
-          (
-            await tx
-              .select({ id: deals.id })
-              .from(deals)
-              .where(and(eq(deals.companyId, companyId), eq(deals.workspaceId, workspaceId)))
-              .orderBy(desc(deals.createdAt))
-              .limit(1)
-          )[0]?.id ?? null;
+        const firstDealForCompany = companyId;
         createdOrMatchedDeals.push({ companyId, dealId: firstDealForCompany });
 
         // contact upsert
@@ -355,10 +334,10 @@ export async function processEmailMessage(
           known.find((k) => k.id === companyId)?.status === "portfolio" ||
           (
             await tx
-              .select({ id: deals.id })
-              .from(deals)
-              .innerJoin(stages, eq(deals.stageId, stages.id))
-              .where(and(eq(deals.companyId, companyId), eq(stages.kind, "won")))
+              .select({ id: companies.id })
+              .from(companies)
+              .innerJoin(stages, eq(companies.stageId, stages.id))
+              .where(and(eq(companies.id, companyId), eq(stages.kind, "won")))
               .limit(1)
           ).length > 0;
 
