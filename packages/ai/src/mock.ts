@@ -1,3 +1,4 @@
+import { extractCreateCompanyNames, fillMissingToolArgs, missingRequiredArgs } from "./assistant-tools.js";
 import type {
   AiProvider,
   AssistantTurnInput,
@@ -453,21 +454,46 @@ export class MockProvider implements AiProvider {
     const q = (lastUser?.content ?? "").toLowerCase();
     const wants = (...keys: string[]) => keys.some((k) => q.includes(k));
     const has = (n: string) => available.has(n);
+    const userText = lastUser?.content ?? "";
+    const createNames = extractCreateCompanyNames(userText);
+    const createIntent =
+      createNames.length > 0 &&
+      (wants("add", "create", "new", "put", "open") || wants("pipeline", "board", "crm"));
+
+    if (createIntent && has("create_company")) {
+      return {
+        reply: null,
+        toolCalls: createNames.slice(0, 4).map((name) => ({ name: "create_company", args: { name } })),
+        confidence: 0.9,
+      };
+    }
+    if (createIntent && has("create_deal")) {
+      return {
+        reply: null,
+        toolCalls: createNames
+          .slice(0, 4)
+          .map((companyName) => ({ name: "create_deal", args: { companyName } })),
+        confidence: 0.9,
+      };
+    }
 
     // verbatim tool mention → call it directly ("get_workspace_info", "list_vaults…")
-    if (lastUser?.content) {
+    if (userText) {
       const mentioned = input.tools.find(
         (t) =>
           t.name.length > 6 &&
-          new RegExp(`\\b${t.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(lastUser.content),
+          new RegExp(`\\b${t.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(userText),
       );
       if (mentioned) {
-        return { reply: null, toolCalls: [{ name: mentioned.name, args: {} }], confidence: 0.9 };
+        const args = fillMissingToolArgs(mentioned, {}, userText);
+        if (!missingRequiredArgs(mentioned.inputSchema, args).length) {
+          return { reply: null, toolCalls: [{ name: mentioned.name, args }], confidence: 0.9 };
+        }
       }
     }
 
     // company-specific question → look it up first
-    const namedCompany = matchCompanyMention(lastUser?.content ?? "");
+    const namedCompany = matchCompanyMention(userText) ?? createNames[0] ?? null;
 
     if (wants("pipeline", "deals", "stage", "funnel") && !wants("risk", "attention", "stale")) {
       const calls = [] as AssistantTurnResult["toolCalls"];
@@ -577,7 +603,7 @@ function synthesizeFromResults(messages: AssistantTurnInput["messages"]): string
   for (const block of messages.filter((m) => m.role === "tool").slice(-3)) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(block.content);
+      parsed = parseToolPayload(block.content);
     } catch {
       continue;
     }
@@ -638,7 +664,21 @@ function synthesizeFromResults(messages: AssistantTurnInput["messages"]): string
   return parts.filter((p) => (seen.has(p) ? false : (seen.add(p), true))).join("\n");
 }
 
+function parseToolPayload(content: string): unknown {
+  const arrow = content.lastIndexOf(" → ");
+  const raw = arrow >= 0 ? content.slice(arrow + 3).trim() : content.trim();
+  return JSON.parse(raw);
+}
+
 function formatRecord(rec: Record<string, unknown>, isEnvelopeItem = false): string {
+  if ("error" in rec) return `- ⚠ ${String(rec.error).slice(0, 140)}`;
+  if (typeof rec.name === "string" && ("stageId" in rec || "pipelineId" in rec || "status" in rec)) {
+    return (
+      `- **${rec.name}** is on the pipeline` +
+      (rec.roundStage ? ` (${String(rec.roundStage)})` : "") +
+      (rec.askAmount != null ? ` — $${Number(rec.askAmount).toLocaleString()}` : "")
+    );
+  }
   // portfolio updates (have title + kind + companyName) — check before deals
   if ("title" in rec && "kind" in rec) {
     return `- Portfolio ${String(rec.kind)}: ${String(rec.companyName ?? "")} — ${String(rec.title)}`;
@@ -678,8 +718,6 @@ function formatRecord(rec: Record<string, unknown>, isEnvelopeItem = false): str
   if ("memoryId" in rec) {
     return `- Remembered: ${String(rec.remembered ?? "").slice(0, 120)}`;
   }
-  // errors
-  if ("error" in rec) return `- ⚠ ${String(rec.error).slice(0, 140)}`;
   const entries = Object.entries(rec).slice(0, isEnvelopeItem ? 3 : 5);
   return "- " + entries.map(([k, v]) => `${k}: ${typeof v === "object" ? "…" : String(v).slice(0, 60)}`).join(" · ");
 }

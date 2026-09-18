@@ -5,7 +5,14 @@ import { withContractEnforcement } from "./normalize.js";
 import type { AiProvider } from "./types.js";
 
 export * from "./types.js";
-export { formatToolCatalog, normalizeAssistantToolCalls, requiredArgNames } from "./assistant-tools.js";
+export {
+  extractCreateCompanyNames,
+  fillMissingToolArgs,
+  formatToolCatalog,
+  missingRequiredArgs,
+  normalizeAssistantToolCalls,
+  requiredArgNames,
+} from "./assistant-tools.js";
 /** Re-exported so tests can wire a deterministic provider without deep imports. */
 export { MockProvider };
 

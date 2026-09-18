@@ -170,6 +170,7 @@ export async function createDeal(
         sourceRef: input.sourceRef,
         fields: input.fields,
         tags: input.tags,
+        mergeWithExisting: true,
       });
       companyId = company.id;
       companyCreated = true;
