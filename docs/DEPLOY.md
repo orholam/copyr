@@ -11,8 +11,9 @@
 1. Import this repo in Vercel via **Continue with Origin** (VenLabs does not
    import GitHub). Until an Origin copy exists, see [`docs/ORIGIN.md`](ORIGIN.md).
 2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
-   - Empty → uses repo-root `vercel.json` (`outputDirectory: apps/web/dist`).
+   - Empty → uses repo-root `vercel.json` (Vite output is copied to `./dist`).
    - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
+   Keep **Output Directory** as `dist` (or clear the dashboard override so `vercel.json` applies).
 3. Framework: Other / Vite (commands are in `vercel.json`).
 4. Vercel env (Production + Preview, **build** time):
 

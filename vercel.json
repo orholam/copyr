@@ -2,8 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "corepack enable && pnpm install --frozen-lockfile=false",
-  "buildCommand": "pnpm --filter @copyr/web build",
-  "outputDirectory": "apps/web/dist",
+  "buildCommand": "pnpm --filter @copyr/web build && rm -rf dist && cp -a apps/web/dist dist",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
