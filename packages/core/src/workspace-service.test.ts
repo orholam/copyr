@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { memberships, users as usersTable } from "@copyr/db/schema.js";
+import { memberships, users as usersTable, workspaces } from "@copyr/db/schema.js";
 import {
   assertPermission,
   memberPermissions,
@@ -40,6 +40,112 @@ describe.skipIf(db === null)("workspace service (integration)", () => {
       const coreErr = err as CoreError;
       expect(coreErr.status).toBe(404);
       expect(coreErr.code).toBe("no_workspace");
+    });
+
+    it("rejects slug-only auth when ALLOW_DEV_WORKSPACE_AUTH is off", async () => {
+      const ctx = {
+        ...fx.ctx,
+        config: { ...fx.ctx.config, ALLOW_DEV_WORKSPACE_AUTH: false },
+      };
+      const err = await resolveSession(ctx, { workspaceSlug: fx.workspaceSlug }).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(CoreError);
+      expect((err as CoreError).status).toBe(401);
+    });
+
+    it("still allows slug resolution for webhooks via allowSlug", async () => {
+      const ctx = {
+        ...fx.ctx,
+        config: { ...fx.ctx.config, ALLOW_DEV_WORKSPACE_AUTH: false },
+      };
+      const session = await resolveSession(ctx, {
+        workspaceSlug: fx.workspaceSlug,
+        allowSlug: true,
+      });
+      expect(session.workspaceId).toBe(fx.workspaceId);
+    });
+  });
+
+  describe("JWT sessions", () => {
+    const SECRET = "test-jwt-secret-for-copyr-auth-hs256";
+    const SUPABASE_URL = "https://copyr-test.supabase.co";
+
+    function jwtCtx() {
+      return {
+        ...fx.ctx,
+        config: {
+          ...fx.ctx.config,
+          ALLOW_DEV_WORKSPACE_AUTH: false,
+          SUPABASE_URL,
+          SUPABASE_JWT_SECRET: SECRET,
+        },
+      };
+    }
+
+    async function tokenFor(input: {
+      sub: string;
+      email: string;
+      name?: string;
+      firm?: string;
+    }): Promise<string> {
+      const { SignJWT } = await import("jose");
+      return new SignJWT({
+        email: input.email,
+        role: "authenticated",
+        user_metadata: { full_name: input.name ?? "Pat Partner", firm_name: input.firm },
+      })
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setSubject(input.sub)
+        .setIssuer(`${SUPABASE_URL}/auth/v1`)
+        .setAudience("authenticated")
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(SECRET));
+    }
+
+    it("maps a JWT to an existing membership by email", async () => {
+      const [owner] = await fx.db
+        .select({ email: usersTable.email })
+        .from(usersTable)
+        .where(eq(usersTable.id, fx.userIds.owner));
+      const token = await tokenFor({
+        sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        email: owner!.email,
+      });
+      const session = await resolveSession(jwtCtx(), { accessToken: token });
+      expect(session.workspaceId).toBe(fx.workspaceId);
+      expect(session.actor.userId).toBe(fx.userIds.owner);
+      expect(session.actor.source).toBe("api");
+    });
+
+    it("provisions a workspace + owner membership + pipeline on first signup", async () => {
+      const sub = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      const token = await tokenFor({
+        sub,
+        email: `first-${sub.slice(0, 8)}@newfirm.vc`,
+        name: "Jordan Founder",
+        firm: "Northwind Capital",
+      });
+      const session = await resolveSession(jwtCtx(), { accessToken: token });
+      expect(session.actor.userId).toBe(sub);
+      expect(session.workspaceSlug).toMatch(/^northwind-capital-/);
+      expect(session.workspaceId).not.toBe(fx.workspaceId);
+
+      const { listPipelines } = await import("./services/pipelines.js");
+      const pipes = await listPipelines(fx.ctx, session);
+      expect(pipes.length).toBeGreaterThan(0);
+      expect(pipes[0].stages.length).toBeGreaterThanOrEqual(2);
+
+      await fx.db.delete(workspaces).where(eq(workspaces.id, session.workspaceId));
+      await fx.db.delete(usersTable).where(eq(usersTable.id, sub));
+    });
+
+    it("does not fall through to the demo slug when the token is garbage", async () => {
+      const err = await resolveSession(jwtCtx(), { accessToken: "totally-not-a-jwt" }).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(CoreError);
+      expect((err as CoreError).status).toBe(401);
     });
   });
 

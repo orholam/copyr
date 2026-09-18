@@ -47,3 +47,11 @@ services:
         sync: false
       - key: DEV_WORKSPACE_SLUG
         value: harbor-ventures
+      - key: ALLOW_DEV_WORKSPACE_AUTH
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://cdsngnauduhiaidzncie.supabase.co
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false

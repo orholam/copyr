@@ -16,7 +16,8 @@ import { runWithSession } from "./session.js";
  *   GET    /mcp   optional SSE upstream channel
  *   DELETE /mcp   terminate session
  *
- * Auth per request: `X-API-Key` or `X-Workspace-Slug` → tenant session.
+ * Auth per request: `Authorization: Bearer` (Supabase JWT), `X-API-Key`, or
+ * `X-Workspace-Slug` when ALLOW_DEV_WORKSPACE_AUTH is on.
  * A given MCP session is bound to the tenant that initialized it.
  */
 
@@ -35,7 +36,10 @@ async function main() {
   async function resolveTenant(headers: Record<string, string | string[] | undefined>): Promise<Session> {
     const apiKey = typeof headers["x-api-key"] === "string" ? headers["x-api-key"] : null;
     const slug = typeof headers["x-workspace-slug"] === "string" ? headers["x-workspace-slug"] : null;
-    return resolveSession(core.ctx, { apiKey, workspaceSlug: slug });
+    const auth = headers.authorization;
+    const accessToken =
+      typeof auth === "string" && /^Bearer\s+/i.test(auth) ? auth.replace(/^Bearer\s+/i, "").trim() : null;
+    return resolveSession(core.ctx, { apiKey, workspaceSlug: slug, accessToken });
   }
 
   async function createSession(session: Session): Promise<McpHttpSession> {

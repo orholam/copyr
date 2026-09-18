@@ -19,23 +19,49 @@ import { CoreError, type CoreContext, type Session } from "../context.js";
 import { generateKeyBetween } from "../fractional.js";
 import { logActivity } from "../activity.js";
 import { toIso } from "../mappers.js";
+import {
+  supabaseAuthConfigured,
+  verifySupabaseAccessToken,
+  type VerifiedAuthUser,
+} from "../auth/supabase-jwt.js";
 
-/* ── session resolution (auth-lite; Supabase lands later) ──────────── */
+/* ── session resolution ────────────────────────────────────────────── */
 
 export interface ResolvedSession extends Session {
   workspaceSlug: string;
 }
 
+export interface ResolveSessionOpts {
+  apiKey?: string | null;
+  workspaceSlug?: string | null;
+  accessToken?: string | null;
+  /**
+   * Allow slug-only resolution after a separate secret check (inbound email
+   * webhooks). Does not apply to browser requests.
+   */
+  allowSlug?: boolean;
+}
+
 export async function resolveSession(
   ctx: CoreContext,
-  opts: { apiKey?: string | null; workspaceSlug?: string | null },
+  opts: ResolveSessionOpts = {},
 ): Promise<ResolvedSession> {
   if (opts.apiKey) return resolveByApiKey(ctx, opts.apiKey);
 
-  const slug = opts.workspaceSlug ?? ctx.config.DEV_WORKSPACE_SLUG;
+  // A Bearer token must never fall through to the demo slug — invalid JWTs
+  // would otherwise enter the seeded workspace as the owner.
+  if (opts.accessToken) return resolveByAccessToken(ctx, opts.accessToken, opts.workspaceSlug);
+
+  const allowSlug = opts.allowSlug === true || ctx.config.ALLOW_DEV_WORKSPACE_AUTH;
+  if (!allowSlug) {
+    throw new CoreError("authentication required", { code: "unauthorized", status: 401 });
+  }
+  return resolveBySlug(ctx, opts.workspaceSlug ?? ctx.config.DEV_WORKSPACE_SLUG);
+}
+
+async function resolveBySlug(ctx: CoreContext, slug: string): Promise<ResolvedSession> {
   const [ws] = await ctx.db.select().from(workspaces).where(eq(workspaces.slug, slug));
   if (!ws) throw new CoreError(`workspace "${slug}" not found`, { code: "no_workspace", status: 404 });
-  // dev default actor: the workspace owner
   const [owner] = await ctx.db
     .select({ userId: users.id })
     .from(memberships)
@@ -44,6 +70,178 @@ export async function resolveSession(
     .limit(1);
   const actor: Actor = { userId: owner?.userId ?? null, source: "api" };
   return { workspaceId: ws.id, workspaceSlug: ws.slug, actor };
+}
+
+async function resolveByAccessToken(
+  ctx: CoreContext,
+  accessToken: string,
+  workspaceSlug?: string | null,
+): Promise<ResolvedSession> {
+  if (!supabaseAuthConfigured(ctx.config) && !ctx.config.SUPABASE_ANON_KEY) {
+    throw new CoreError("bearer token provided but Supabase auth is not configured on the API", {
+      code: "unauthorized",
+      status: 401,
+    });
+  }
+  const authUser = await verifySupabaseAccessToken(ctx.config, accessToken);
+  const user = await upsertUserFromAuth(ctx, authUser);
+  return resolveMembership(ctx, user.id, workspaceSlug, authUser.firmName);
+}
+
+async function upsertUserFromAuth(ctx: CoreContext, authUser: VerifiedAuthUser) {
+  const [byId] = await ctx.db.select().from(users).where(eq(users.id, authUser.id)).limit(1);
+  if (byId) {
+    if (byId.name !== authUser.name || byId.email !== authUser.email) {
+      const [updated] = await ctx.db
+        .update(users)
+        .set({ name: authUser.name, email: authUser.email })
+        .where(eq(users.id, byId.id))
+        .returning();
+      return updated ?? byId;
+    }
+    return byId;
+  }
+
+  const [row] = await ctx.db
+    .insert(users)
+    .values({
+      id: authUser.id,
+      email: authUser.email,
+      name: authUser.name,
+    })
+    .onConflictDoUpdate({
+      target: users.email,
+      set: { name: sql`excluded.name` },
+    })
+    .returning();
+  if (!row) {
+    throw new CoreError("failed to upsert user from auth token", { status: 500 });
+  }
+  return row;
+}
+
+async function resolveMembership(
+  ctx: CoreContext,
+  userId: string,
+  workspaceSlug?: string | null,
+  firmName?: string,
+): Promise<ResolvedSession> {
+  const memberRows = await ctx.db
+    .select({
+      workspaceId: memberships.workspaceId,
+      role: memberships.role,
+      slug: workspaces.slug,
+    })
+    .from(memberships)
+    .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+    .where(eq(memberships.userId, userId));
+
+  const actor: Actor = { userId, source: "api" };
+
+  if (workspaceSlug) {
+    const match = memberRows.find((m) => m.slug === workspaceSlug);
+    if (match) {
+      return { workspaceId: match.workspaceId, workspaceSlug: match.slug, actor };
+    }
+    if (memberRows.length > 0) {
+      throw new CoreError("not a member of that workspace", { code: "forbidden", status: 403 });
+    }
+  }
+
+  if (memberRows.length > 0) {
+    const chosen = memberRows.find((m) => m.role === "owner") ?? memberRows[0];
+    return { workspaceId: chosen.workspaceId, workspaceSlug: chosen.slug, actor };
+  }
+
+  const [authUser] = await ctx.db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return provisionWorkspaceForUser(ctx, {
+    userId,
+    name: authUser?.name ?? "Member",
+    email: authUser?.email ?? "",
+    firmName,
+  });
+}
+
+const DEFAULT_STAGES: Array<{ name: string; color: string; kind: "active" | "won" | "lost" }> = [
+  { name: "Intake", color: "#94a3b8", kind: "active" },
+  { name: "Initial Review", color: "#6366f1", kind: "active" },
+  { name: "Due Diligence", color: "#f59e0b", kind: "active" },
+  { name: "Partner Meeting", color: "#8b5cf6", kind: "active" },
+  { name: "Committed", color: "#10b981", kind: "won" },
+  { name: "Passed", color: "#ef4444", kind: "lost" },
+];
+
+function slugify(raw: string): string {
+  const base = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return base || "workspace";
+}
+
+/**
+ * First-login provisioning: workspace + owner membership + default pipeline.
+ * No extra tables — uses existing `workspaces` / `memberships` / `pipelines` / `stages`.
+ */
+export async function provisionWorkspaceForUser(
+  ctx: CoreContext,
+  input: { userId: string; name: string; email: string; firmName?: string },
+): Promise<ResolvedSession> {
+  const firm = input.firmName?.trim() || `${input.name}'s firm`;
+  const slug = `${slugify(firm)}-${randomBytes(2).toString("hex")}`;
+
+  return ctx.db.transaction(async (tx) => {
+    const existing = await tx
+      .select({
+        workspaceId: memberships.workspaceId,
+        slug: workspaces.slug,
+      })
+      .from(memberships)
+      .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+      .where(eq(memberships.userId, input.userId))
+      .limit(1);
+    if (existing[0]) {
+      return {
+        workspaceId: existing[0].workspaceId,
+        workspaceSlug: existing[0].slug,
+        actor: { userId: input.userId, source: "api" as const },
+      };
+    }
+
+    const [ws] = await tx
+      .insert(workspaces)
+      .values({ name: firm, slug, plan: "trial", aiCreditsBalance: 500 })
+      .returning();
+
+    await tx.insert(memberships).values({
+      workspaceId: ws.id,
+      userId: input.userId,
+      role: "owner",
+    });
+
+    const [pipeline] = await tx
+      .insert(pipelines)
+      .values({ workspaceId: ws.id, name: "Deal Flow", isDefault: true, position: 0 })
+      .returning();
+
+    await tx.insert(stages).values(
+      DEFAULT_STAGES.map((s, i) => ({
+        workspaceId: ws.id,
+        pipelineId: pipeline.id,
+        name: s.name,
+        color: s.color,
+        kind: s.kind,
+        position: i,
+      })),
+    );
+
+    return {
+      workspaceId: ws.id,
+      workspaceSlug: ws.slug,
+      actor: { userId: input.userId, source: "api" as const },
+    };
+  });
 }
 
 async function resolveByApiKey(ctx: CoreContext, secret: string): Promise<ResolvedSession> {

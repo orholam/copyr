@@ -24,7 +24,7 @@
 | Portfolio | Portco update timelines from emails | `portfolio_updates` + classifier job |
 | Relationships | Who on the team talked to which company | `relationships` derived from inbound/outbound email graph |
 | Sharing | Share links: selective attrs, password, expiry, access logs, editable | `share_links` + `share_views`, public viewer page |
-| Team | Workspaces, roles, collaboration | workspaces/memberships (auth deferred to Supabase) |
+| Team | Workspaces, roles, collaboration | workspaces/memberships (Supabase Auth JWT → membership) |
 | Credits | 500 AI credits/user/month | `credit_ledger` with grants + metered spends |
 | API | Full API + Zapier | REST /api/v1 + OpenAPI + webhooks + **MCP server** (better than Zapier) |
 
