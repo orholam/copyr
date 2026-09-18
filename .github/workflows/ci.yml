@@ -41,7 +41,10 @@ jobs:
       - name: smoke (full pipeline)
         run: pnpm smoke
       - name: build web
-        run: pnpm --filter @copyr/web build
+        run: |
+          pnpm --filter @copyr/web build
+          test -f apps/web/dist/index.html
+          test -f dist/index.html
 
   docker:
     runs-on: ubuntu-latest
