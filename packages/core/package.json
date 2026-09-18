@@ -23,6 +23,7 @@
     "@copyr/storage": "workspace:*",
     "drizzle-orm": "^0.44.2",
     "fractional-indexing": "^4.0.0",
+    "jose": "^6.2.12",
     "pg": "^8.16.0",
     "pg-boss": "^10.1.5",
     "unpdf": "^0.12.1",

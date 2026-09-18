@@ -8,8 +8,29 @@ export function apiUrl(path: string): string {
 }
 
 const BASE = apiUrl("/api/v1");
+
+/** Default demo workspace — only sent when using the Vite-dev auth bypass. */
 export const WORKSPACE_SLUG =
   (import.meta.env.VITE_WORKSPACE_SLUG as string | undefined) ?? "harbor-ventures";
+
+let accessToken: string | null = null;
+let workspaceSlug: string | null = null;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function setWorkspaceSlug(slug: string | null): void {
+  workspaceSlug = slug;
+}
+
+export function getWorkspaceSlug(): string | null {
+  return workspaceSlug;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -23,13 +44,28 @@ export class ApiError extends Error {
   }
 }
 
+export function buildRequestHeaders(init?: HeadersInit): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers.authorization = `Bearer ${accessToken}`;
+  }
+  const slug = workspaceSlug ?? (accessToken ? null : WORKSPACE_SLUG);
+  if (slug) headers["x-workspace-slug"] = slug;
+  if (init) {
+    const extra = new Headers(init);
+    extra.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  return headers;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       ...(init?.body ? { "content-type": "application/json" } : {}),
-      "x-workspace-slug": WORKSPACE_SLUG,
-      ...init?.headers,
+      ...buildRequestHeaders(init?.headers),
     },
   });
   if (!res.ok) {
@@ -59,7 +95,7 @@ export const api = {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-workspace-slug": WORKSPACE_SLUG,
+        ...buildRequestHeaders(),
       },
       body: JSON.stringify(body ?? {}),
     });
@@ -101,7 +137,7 @@ export const api = {
     const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ""}`, {
       method: "POST",
       body: fd,
-      headers: { "x-workspace-slug": WORKSPACE_SLUG },
+      headers: buildRequestHeaders(),
     });
     if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => ({ error: "upload failed" })));
     return res.json() as Promise<unknown>;

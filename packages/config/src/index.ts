@@ -62,6 +62,23 @@ const schema = z.object({
 
   DEV_WORKSPACE_SLUG: z.string().default("harbor-ventures"),
 
+  /**
+   * When true, `X-Workspace-Slug` / `DEV_WORKSPACE_SLUG` can authenticate a
+   * request without a Bearer token or API key. Defaults off in production
+   * unless the operator sets this explicitly.
+   */
+  ALLOW_DEV_WORKSPACE_AUTH: envBoolean(true),
+
+  /** venlabs-demo: https://cdsngnauduhiaidzncie.supabase.co */
+  SUPABASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+  /** Legacy anon JWT or sb_publishable_… key. Server uses this for Auth API fallback. */
+  SUPABASE_ANON_KEY: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+  /**
+   * Shared secret for HS256 (legacy) access tokens. Prefer JWKS (ES256) via
+   * SUPABASE_URL; set this only if the project still signs with HS256.
+   */
+  SUPABASE_JWT_SECRET: z.preprocess(emptyToUndef, z.string().min(1).optional()),
+
   /** Session-mode or direct Postgres URL. Used for migrations and pg-boss (LISTEN/NOTIFY). */
   DATABASE_URL: z
     .string()
@@ -116,6 +133,12 @@ export function loadConfig(overrides: Partial<Record<string, string>> = {}): App
   const parsed = schema.parse({ ...process.env, ...overrides });
   if (!parsed.STORAGE_ENDPOINT && parsed.NODE_ENV !== "production") {
     parsed.STORAGE_ENDPOINT = "http://localhost:9000";
+  }
+  const explicitDevAuth =
+    Object.prototype.hasOwnProperty.call(overrides, "ALLOW_DEV_WORKSPACE_AUTH") ||
+    Object.prototype.hasOwnProperty.call(process.env, "ALLOW_DEV_WORKSPACE_AUTH");
+  if (!explicitDevAuth && parsed.NODE_ENV === "production") {
+    parsed.ALLOW_DEV_WORKSPACE_AUTH = false;
   }
   if (Object.keys(overrides).length === 0) cached = parsed;
   return parsed;

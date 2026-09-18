@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUrl } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import { Badge, Button, Field, PageHeader, SegmentedControl, Select, Spinner, inputCls, cx } from "../../components/ui";
 import AutomationsTab from "./settings-tabs/AutomationsTab";
 import WebhooksTab from "./settings-tabs/WebhooksTab";
@@ -412,9 +414,12 @@ function SecurityPanel() {
         ))}
       </div>
       <div className="panel animate-fade-in p-5">
-        <h3 className="text-sm font-semibold text-paper-900">Multi-factor authentication</h3>
-        <p className="mb-3 mt-0.5 text-xs text-paper-600">TOTP-based MFA activates with the Supabase auth milestone.</p>
-        <Button size="xs" variant="outline" disabled>Enable MFA (soon)</Button>
+        <h3 className="text-sm font-semibold text-paper-900">Session</h3>
+        <p className="mb-3 mt-0.5 text-xs text-paper-600">
+          Sign-in is handled by Supabase Auth. TOTP MFA can be enabled in the Supabase dashboard
+          (Authentication → Multi-Factor).
+        </p>
+        <SignOutButton />
       </div>
       <div className="panel animate-fade-in p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-paper-900">
@@ -424,5 +429,21 @@ function SecurityPanel() {
         <Button size="xs" variant="outline" disabled>Contact sales</Button>
       </div>
     </section>
+  );
+}
+
+function SignOutButton() {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  return (
+    <Button
+      size="xs"
+      variant="outline"
+      onClick={() => {
+        void signOut().then(() => navigate("/auth/sign-in"));
+      }}
+    >
+      Sign out
+    </Button>
   );
 }

@@ -6,6 +6,18 @@ import { CoreError, createCore, type Core, type Session } from "@copyr/core";
 import { isAllowedCorsOrigin, loadConfig } from "@copyr/config";
 import { resolveSession } from "@copyr/core";
 
+/** Authorization: Bearer, or `access_token` query (EventSource cannot set headers). */
+export function extractAccessToken(req: FastifyRequest): string | null {
+  const header = req.headers.authorization;
+  if (typeof header === "string") {
+    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+    if (match?.[1]) return match[1].trim();
+  }
+  const q = (req.query as { access_token?: unknown } | undefined)?.access_token;
+  if (typeof q === "string" && q.trim()) return q.trim();
+  return null;
+}
+
 export interface AppRequest extends FastifyRequest {
   session?: Session;
   core?: Core;
@@ -56,13 +68,15 @@ export async function buildApp(opts: { core?: Core } = {}) {
     const apiKey = typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : null;
     const slug =
       (req.headers["x-workspace-slug"] as string | undefined) ?? config.DEV_WORKSPACE_SLUG;
-    const cacheKey = apiKey ?? slug;
+    const accessToken = extractAccessToken(req);
+    const cacheKey = apiKey ?? accessToken?.slice(0, 24) ?? slug;
     const cached = planCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 60_000) return cached.plan;
     try {
       const resolved = await (await import("@copyr/core")).resolveSession(core.ctx, {
         apiKey,
         workspaceSlug: slug,
+        accessToken,
       });
       const ws = await core.session.getWorkspace(core.ctx, resolved.workspaceId);
       planCache.set(cacheKey, { plan: ws.plan, at: Date.now() });
@@ -81,7 +95,9 @@ export async function buildApp(opts: { core?: Core } = {}) {
     timeWindow: "1 minute",
     hook: "onRequest",
     keyGenerator: (req) =>
-      (req.headers["x-api-key"] as string | undefined) ?? req.ip,
+      (req.headers["x-api-key"] as string | undefined) ??
+      extractAccessToken(req)?.slice(0, 24) ??
+      req.ip,
   });
 
   // ── error mapping ─────────────────────────────────────────────────
@@ -122,6 +138,7 @@ export async function buildApp(opts: { core?: Core } = {}) {
     req.session = await resolveSession(core.ctx, {
       apiKey: typeof apiKey === "string" ? apiKey : null,
       workspaceSlug: slug,
+      accessToken: extractAccessToken(req),
     });
   });
 

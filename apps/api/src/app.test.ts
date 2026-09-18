@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
 import { createApiKey, createCore, resolveSession, type Core, type Session } from "@copyr/core";
@@ -45,15 +45,26 @@ describe("api", () => {
       const res = await app.inject({ method: "GET", url: "/api/v1/missing" });
       expect(res.headers["content-type"]).toContain("application/json");
     });
+
+    it("rejects a bearer token that is not a user session", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/v1/me",
+        headers: { authorization: "Bearer not-a-jwt" },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toMatchObject({ code: "unauthorized" });
+    });
   });
 
-  describe.skipIf(!dbUp)("authenticated routes", () => {
+  describe("authenticated routes", () => {
     let headers: { "x-api-key": string };
     let agentSession: Session;
     let createdCompanyId: string | undefined;
     const companyName = `Api Test Co ${Date.now()}`;
 
     beforeAll(async () => {
+      if (!dbUp) return;
       const devSession = await resolveSession(core.ctx, {});
       const key = await createApiKey(core.ctx, devSession, "route-tests");
       headers = { "x-api-key": key.secret };
@@ -61,11 +72,14 @@ describe("api", () => {
     });
 
     afterAll(async () => {
-      if (createdCompanyId) {
-        await core.companies
-          .deleteCompany(core.ctx, agentSession, createdCompanyId)
-          .catch(() => undefined);
-      }
+      if (!dbUp || !createdCompanyId) return;
+      await core.companies
+        .deleteCompany(core.ctx, agentSession, createdCompanyId)
+        .catch(() => undefined);
+    });
+
+    beforeEach(({ skip }) => {
+      if (!dbUp) skip();
     });
 
     it("rejects invalid api keys with a 401 envelope", async () => {

@@ -67,6 +67,29 @@ describe("loadConfig", () => {
     expect(cfg.AUTO_MIGRATE).toBe(false);
     expect(cfg.CORS_ALLOW_VERCEL_PREVIEWS).toBe(false);
   });
+
+  it("defaults ALLOW_DEV_WORKSPACE_AUTH off in production unless set", () => {
+    const prod = loadConfig({ NODE_ENV: "production", STORAGE_ENDPOINT: "https://example.com" });
+    expect(prod.ALLOW_DEV_WORKSPACE_AUTH).toBe(false);
+    const forced = loadConfig({
+      NODE_ENV: "production",
+      STORAGE_ENDPOINT: "https://example.com",
+      ALLOW_DEV_WORKSPACE_AUTH: "true",
+    });
+    expect(forced.ALLOW_DEV_WORKSPACE_AUTH).toBe(true);
+  });
+
+  it("accepts supabase auth env vars", () => {
+    const cfg = loadConfig({
+      NODE_ENV: "test",
+      SUPABASE_URL: "https://cdsngnauduhiaidzncie.supabase.co",
+      SUPABASE_ANON_KEY: "eyJhbGciOiJ.test",
+      SUPABASE_JWT_SECRET: "super-secret",
+    });
+    expect(cfg.SUPABASE_URL).toBe("https://cdsngnauduhiaidzncie.supabase.co");
+    expect(cfg.SUPABASE_ANON_KEY).toBe("eyJhbGciOiJ.test");
+    expect(cfg.SUPABASE_JWT_SECRET).toBe("super-secret");
+  });
 });
 
 describe("isAllowedCorsOrigin", () => {

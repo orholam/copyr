@@ -132,7 +132,10 @@ export async function createCore(opts?: {
 export * from "./context.js";
 export * from "./errors.js";
 export { mergeCompany, listCompanyRelationships } from "./services/companies.js";
-export { resolveSession, getWorkspace, listCreditLedger, createApiKey, listApiKeys, revokeApiKey } from "./services/workspace.js";
+export { resolveSession, getWorkspace, listCreditLedger, createApiKey, listApiKeys, revokeApiKey, provisionWorkspaceForUser } from "./services/workspace.js";
+export type { ResolveSessionOpts, ResolvedSession } from "./services/workspace.js";
+export { verifySupabaseAccessToken, supabaseAuthConfigured } from "./auth/supabase-jwt.js";
+export type { VerifiedAuthUser } from "./auth/supabase-jwt.js";
 export {
   assertPermission,
   memberPermissions,
