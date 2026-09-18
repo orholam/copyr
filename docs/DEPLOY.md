@@ -1,6 +1,68 @@
 # Copyr — deployment
 
-Demo topology (smallest path to a public URL):
+> **The Fastify API must be a separate host. Do not put it on Vercel.**
+> Vercel serves only the Vite SPA (`apps/web`). The API needs a long-running
+> process (SSE, 100MB uploads, pg-boss workers). Use Render / Fly / Railway
+> (`Dockerfile.api`, `render.yaml`). Without that host, the marketing site still
+> deploys; `/app` API calls will 404.
+
+## Ship now (Vercel SPA)
+
+1. Import `orholam/copyr` in Vercel.
+2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
+   - Empty → uses repo-root `vercel.json` (`outputDirectory: apps/web/dist`).
+   - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
+3. Framework: Other / Vite (commands are in `vercel.json`).
+4. Vercel env (Production + Preview, **build** time):
+
+```bash
+VITE_API_URL=https://<your-api-host>
+VITE_WORKSPACE_SLUG=harbor-ventures
+```
+
+`VITE_API_URL` can wait until the API is up. Redeploy the SPA after setting it (Vite inlines it).
+
+## venlabs-demo env (API host — not Vercel)
+
+Project: [venlabs-demo](https://cdsngnauduhiaidzncie.supabase.co) · ref `cdsngnauduhiaidzncie`
+
+Set these on **Render/Fly/Railway** (and in a local `.env` for `pnpm db:migrate`). Never commit secrets.
+
+### Postgres
+
+Dashboard → **Project Settings → Database**. Use the **session pooler (port 5432)** as `DATABASE_URL`. pg-boss needs `LISTEN/NOTIFY`; the **transaction** pooler (port 6543) cannot run it.
+
+```bash
+DATABASE_URL=postgresql://postgres.cdsngnauduhiaidzncie:[DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres?sslmode=require
+
+# Optional — query pool only (never pg-boss / migrate):
+DATABASE_POOL_URL=postgresql://postgres.cdsngnauduhiaidzncie:[DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require
+
+DATABASE_SSL=auto
+```
+
+Direct URL (IPv6): `postgresql://postgres:[DB-PASSWORD]@db.cdsngnauduhiaidzncie.supabase.co:5432/postgres?sslmode=require` — prefer the pooler on Render.
+
+Then: `pnpm db:migrate` (renames a non-Copyr `public.deals` scaffold instead of dropping it) and optional `pnpm db:seed`.
+
+### Storage (S3-compatible)
+
+Dashboard → **Storage → S3**. Enable S3 protocol, create private bucket `copyr`, mint access keys.
+
+```bash
+STORAGE_ENDPOINT=https://cdsngnauduhiaidzncie.storage.supabase.co/storage/v1/s3
+STORAGE_REGION=[PROJECT-REGION]
+STORAGE_BUCKET=copyr
+STORAGE_ACCESS_KEY_ID=[SUPABASE-S3-ACCESS-KEY]
+STORAGE_SECRET_ACCESS_KEY=[SUPABASE-S3-SECRET-KEY]
+STORAGE_FORCE_PATH_STYLE=true
+```
+
+Also on the API host: `PUBLIC_URL=https://<api-host>`, `WEB_URL=https://<vercel-host>`, `CORS_ALLOW_VERCEL_PREVIEWS=true`, `AUTO_MIGRATE=true`, `DEV_WORKSPACE_SLUG=harbor-ventures`.
+
+Placeholders: [`.env.example`](../.env.example). Local docker is unchanged (`pnpm db:up` → `:5433` / MinIO `:9000`).
+
+## Topology
 
 ```
   browser ──▶  Vercel (Vite SPA)  ──REST/SSE──▶  Render/Fly/Railway (Fastify API + workers)
