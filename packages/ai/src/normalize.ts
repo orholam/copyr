@@ -97,25 +97,25 @@ function normalizeUpdateClassification(raw: unknown): UpdateClassification {
 
 /** Wrap any provider with contract normalization. */
 export function withContractEnforcement(provider: AiProvider): AiProvider {
-  // Pass through any provider capabilities beyond the core four, then
-  // override the core methods with contract-normalizing wrappers.
-  return {
-    ...provider,
-    async extractDeck(text, fieldSpecs) {
-      return normalizeDeck(await provider.extractDeck(text, fieldSpecs));
-    },
-    async triageEmail(input) {
-      return normalizeTriage(await provider.triageEmail(input));
-    },
-    async classifyUpdate(text) {
-      return normalizeUpdateClassification(await provider.classifyUpdate(text));
-    },
-    async generateThesis(input) {
-      const out = await provider.generateThesis(input);
-      return {
-        memo: typeof out?.memo === "string" && out.memo.trim() ? out.memo : `(no memo generated)`,
-        confidence: typeof out?.confidence === "number" ? Math.min(1, Math.max(0, out.confidence)) : 0.5,
-      };
-    },
+  // Object spread copies only own enumerable properties. Class providers
+  // (MockProvider, OpenAiCompatibleProvider) keep assistantTurn / answerGrounded /
+  // extractTableRows / scoreThesis on the prototype, so `{ ...provider }` drops
+  // them and chat SSE fails with `ctx.ai.assistantTurn is not a function`.
+  // Object.create keeps the prototype chain, then we override the four
+  // contract-normalized methods as own properties.
+  const wrapped = Object.create(provider) as AiProvider;
+  wrapped.extractDeck = async (text, fieldSpecs) =>
+    normalizeDeck(await provider.extractDeck(text, fieldSpecs));
+  wrapped.triageEmail = async (input) =>
+    normalizeTriage(await provider.triageEmail(input));
+  wrapped.classifyUpdate = async (text) =>
+    normalizeUpdateClassification(await provider.classifyUpdate(text));
+  wrapped.generateThesis = async (input) => {
+    const out = await provider.generateThesis(input);
+    return {
+      memo: typeof out?.memo === "string" && out.memo.trim() ? out.memo : `(no memo generated)`,
+      confidence: typeof out?.confidence === "number" ? Math.min(1, Math.max(0, out.confidence)) : 0.5,
+    };
   };
+  return wrapped;
 }
