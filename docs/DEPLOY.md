@@ -13,16 +13,21 @@
 2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
    - Empty → uses repo-root `vercel.json` (Vite output is copied to `./dist`).
    - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
+   - If the dashboard is already set to `apps/api` (GitHub integration default for this
+     project), `apps/api/vercel.json` still builds the **SPA** — it does not deploy Fastify.
+     Prefer changing Root Directory to empty or `apps/web`.
    Keep **Output Directory** as `dist` (or clear the dashboard override so `vercel.json` applies).
 3. Framework: Other / Vite (commands are in `vercel.json`).
 4. Vercel env (Production + Preview, **build** time):
 
 ```bash
 VITE_API_URL=https://<your-api-host>
+VITE_SUPABASE_URL=https://cdsngnauduhiaidzncie.supabase.co
+VITE_SUPABASE_ANON_KEY=<legacy anon JWT from Project Settings → API>
 VITE_WORKSPACE_SLUG=harbor-ventures
 ```
 
-`VITE_API_URL` can wait until the API is up. Redeploy the SPA after setting it (Vite inlines it).
+`VITE_API_URL` can wait until the API is up. Redeploy the SPA after setting Vite env (Vite inlines it). Never put a service-role key in Vercel.
 
 ## venlabs-demo env (API host — not Vercel)
 
@@ -60,7 +65,7 @@ STORAGE_SECRET_ACCESS_KEY=[SUPABASE-S3-SECRET-KEY]
 STORAGE_FORCE_PATH_STYLE=true
 ```
 
-Also on the API host: `PUBLIC_URL=https://<api-host>`, `WEB_URL=https://<vercel-host>`, `CORS_ALLOW_VERCEL_PREVIEWS=true`, `AUTO_MIGRATE=true`, `DEV_WORKSPACE_SLUG=harbor-ventures`.
+Also on the API host: `PUBLIC_URL=https://<api-host>`, `WEB_URL=https://<vercel-host>`, `CORS_ALLOW_VERCEL_PREVIEWS=true`, `AUTO_MIGRATE=true`, `ALLOW_DEV_WORKSPACE_AUTH=false`, plus the Auth vars in **§5**.
 
 Placeholders: [`.env.example`](../.env.example). Local docker is unchanged (`pnpm db:up` → `:5433` / MinIO `:9000`).
 
@@ -78,8 +83,11 @@ multipart uploads, and **pg-boss workers in-process** — none of those fit a
 request-scoped function without a larger rewrite. The SPA is static and belongs
 on Vercel; the API is a long-running Node/Docker service.
 
-Auth remains `X-API-Key` / `X-Workspace-Slug` / `DEV_WORKSPACE_SLUG` until
-Supabase Auth lands (`resolveSession` is the swap point).
+Auth: the SPA signs in with Supabase email+password (`@supabase/supabase-js`) and
+sends `Authorization: Bearer <access_token>`. The API verifies the JWT in
+`resolveSession` and maps the user to a workspace membership. API keys remain
+for agents. Slug-only access (`X-Workspace-Slug` / `DEV_WORKSPACE_SLUG`) is
+gated by `ALLOW_DEV_WORKSPACE_AUTH`, which defaults **off** in production.
 
 ## venlabs-demo (Venture Labs)
 
@@ -170,7 +178,10 @@ Recommended: **Render** with the repo `Dockerfile.api` and `render.yaml`.
 | `WEB_URL` | Vercel origin, e.g. `https://copyr.vercel.app` |
 | `CORS_ALLOW_VERCEL_PREVIEWS` | `true` so `*.vercel.app` previews can call the API |
 | `AUTO_MIGRATE` | `true` on Render |
-| `DEV_WORKSPACE_SLUG` | `harbor-ventures` after seed |
+| `ALLOW_DEV_WORKSPACE_AUTH` | `false` in production (do not re-enable slug-only “any header” auth) |
+| `SUPABASE_URL` | `https://cdsngnauduhiaidzncie.supabase.co` |
+| `SUPABASE_JWT_SECRET` | Dashboard → Project Settings → API → JWT Secret (legacy HS256). Server-only. |
+| `SUPABASE_ANON_KEY` | Same dashboard page, **legacy anon** JWT. Used only if JWKS/secret verification needs the Auth `/user` fallback. Not a service-role key. |
 | `AI_PROVIDER` | `mock` for a free demo; `openai` + `OPENAI_API_KEY` for real LLMs |
 | `INBOUND_WEBHOOK_SECRET` | rotate from the `.env.example` default |
 
@@ -182,11 +193,11 @@ Optional MCP HTTP: `Dockerfile.mcp` with `pnpm --filter @copyr/mcp dev` / `src/h
 
 ### Web (Vercel)
 
-**API is not on Vercel.** Root `vercel.json` (empty Root Directory) or `apps/web/vercel.json` (Root Directory `apps/web`) builds the SPA.
+**API is not on Vercel.** Root `vercel.json` (empty Root Directory), `apps/web/vercel.json` (Root Directory `apps/web`), or `apps/api/vercel.json` (if Root Directory is still `apps/api`) all build the SPA.
 
 1. Import `orholam/copyr` in Vercel.
 2. Root Directory: empty **or** `apps/web`.
-3. Build-time env: `VITE_API_URL`, `VITE_WORKSPACE_SLUG` (see Ship now above).
+3. Build-time env: `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (see Ship now above). `VITE_WORKSPACE_SLUG` is optional (legacy demo hint).
 
 After the first Vercel URL exists, set `WEB_URL` on the API to that origin.
 
@@ -232,7 +243,8 @@ Target topology if you are not using Supabase:
 | `STORAGE_BUCKET` | copyr-local | copyr-prod-&lt;account&gt; |
 | `AI_PROVIDER` | mock | openai (or Bedrock-compatible gateway) |
 | `INBOUND_WEBHOOK_SECRET` | dev value | Secrets Manager |
-| `DEV_WORKSPACE_SLUG` | harbor-ventures | *(remove once Supabase auth lands)* |
+| `DEV_WORKSPACE_SLUG` | harbor-ventures | unused when JWT/API-key auth is required |
+| `ALLOW_DEV_WORKSPACE_AUTH` | true (default in development) | `false` |
 
 1. **Network**: VPC with private subnets for ECS + RDS; NAT or VPC endpoints for ECR/S3.
 2. **Data**: RDS Postgres 16 Multi-AZ; run `pnpm --filter @copyr/db migrate` as a one-off ECS task.
@@ -243,11 +255,56 @@ Target topology if you are not using Supabase:
 7. **Secrets**: SSM → task definition; rotate webhook secret, `OPENAI_API_KEY`, DB credentials.
 8. **Observability**: JSON logs → CloudWatch; `/health` for ALB checks.
 
-## Auth note
+## Auth (email + password)
 
-Today every request carries `X-API-Key` / `X-Workspace-Slug`. When Supabase Auth lands:
+Humans authenticate with **Supabase Auth email+password only** (no Google / social providers). Agents keep using `X-API-Key`.
 
-- issue Supabase JWTs to humans, keep API keys for agents,
-- swap the single `resolveSession()` in `packages/core/src/services/workspace.ts`
-  to validate JWTs (workspace membership lookup), and
-- enforce row scoping exactly where it already is: every query filters `workspace_id`.
+### Runtime
+
+1. SPA (`@supabase/supabase-js`) `signUp` / `signInWithPassword` against venlabs-demo.
+2. Browser stores the session (PKCE) and sends `Authorization: Bearer <access_token>` on REST, uploads, and SSE.
+3. Fastify `preHandler` passes the token to `resolveSession` (`packages/core`).
+4. The API verifies the JWT (HS256 `SUPABASE_JWT_SECRET`, or JWKS at `SUPABASE_URL/auth/v1/.well-known/jwks.json`, or `GET /auth/v1/user` with the anon key).
+5. `sub` + email map onto `users` / `memberships`. First signup with no membership creates a workspace, owner membership, default pipeline, and system agents. `X-Workspace-Slug` selects among workspaces the user already belongs to.
+
+`ALLOW_DEV_WORKSPACE_AUTH` defaults **off** when `NODE_ENV=production`. Do not set it to `true` on Render. Local docker still uses slug fallback so `pnpm dev` works without Auth env.
+
+### Env checklist
+
+**Vercel (Production + Preview, build time)**
+
+| Var | Value |
+|---|---|
+| `VITE_API_URL` | `https://copyr.onrender.com` |
+| `VITE_SUPABASE_URL` | `https://cdsngnauduhiaidzncie.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Dashboard → **Project Settings → API** → legacy `anon` `public` JWT. Redeploy after setting. |
+| `VITE_WORKSPACE_SLUG` | optional; `harbor-ventures` is only a hint |
+
+Never set a service-role key on Vercel. Vite inlines `VITE_*` into the browser bundle.
+
+**Render (API)**
+
+| Var | Value |
+|---|---|
+| `DATABASE_URL` | existing session-pooler URL |
+| `SUPABASE_URL` | `https://cdsngnauduhiaidzncie.supabase.co` |
+| `SUPABASE_JWT_SECRET` | Dashboard → **Project Settings → API** → JWT Secret (server-only) |
+| `SUPABASE_ANON_KEY` | same page, legacy anon JWT (fallback verifier; not required if JWT secret is set) |
+| `ALLOW_DEV_WORKSPACE_AUTH` | `false` |
+| `WEB_URL` | `https://copyr.vercel.app` |
+| `PUBLIC_URL` | `https://copyr.onrender.com` |
+
+### Dashboard steps (venlabs-demo)
+
+Authentication → **URL Configuration**:
+
+- **Site URL:** `https://copyr.vercel.app`
+- **Redirect URLs:** `https://copyr.vercel.app/**`, `https://copyr.vercel.app/auth/callback`, `http://localhost:5173/**`, `http://localhost:5173/auth/callback`, `http://127.0.0.1:5173/**`
+
+Authentication → **Providers → Email**: leave **Confirm email** enabled (sign-up will ask the user to check their inbox). For a faster demo, turn Confirm email **off** so `signUp` returns a session immediately.
+
+Do **not** enable Google (or any social provider). The SPA has no Google buttons.
+
+Row Level Security on `public` Copyr tables stays as-is (enabled, no anon policies). The API uses the `postgres` role via `DATABASE_URL`, not PostgREST.
+
+---

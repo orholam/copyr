@@ -17,6 +17,7 @@ async function main() {
   const session = await resolveSession(core.ctx, {
     apiKey: process.env.COPYR_API_KEY ?? null,
     workspaceSlug: process.env.COPYR_WORKSPACE_SLUG ?? null,
+    allowSlug: true,
   });
   bindFallbackSession(session);
 

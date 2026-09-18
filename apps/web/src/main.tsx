@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { AuthProvider } from "./lib/auth";
 import Landing from "./pages/Landing";
 import AppShell from "./pages/app/Shell";
 import Dashboard from "./pages/app/Dashboard";
@@ -16,7 +17,7 @@ import Settings from "./pages/app/Settings";
 import Diligence from "./pages/app/Diligence";
 import Automations from "./pages/app/Automations";
 import CommandCenter from "./pages/app/CommandCenter";
-import { SignIn, SignUp, PasswordReset } from "./pages/auth";
+import { SignIn, SignUp, PasswordReset, AuthCallback, RequireAuth } from "./pages/auth";
 import PublicIntakeForm from "./pages/PublicIntakeForm";
 import { ShareRedirect } from "./pages/PublicIntakeForm";
 import {
@@ -52,9 +53,15 @@ const router = createBrowserRouter([
   { path: "/auth/sign-in", element: <SignIn /> },
   { path: "/auth/sign-up", element: <SignUp /> },
   { path: "/auth/reset", element: <PasswordReset /> },
+  { path: "/auth/password-reset", element: <PasswordReset /> },
+  { path: "/auth/callback", element: <AuthCallback /> },
   {
     path: "/app",
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Assistant /> },
       { path: "dashboard", element: <Dashboard /> },
@@ -74,7 +81,9 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );

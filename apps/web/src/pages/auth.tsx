@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle, useTheme } from "../lib/theme";
+import { useAuth } from "../lib/auth";
+import { isAuthRequired, supabase, supabaseConfigured } from "../lib/supabase";
 
 /**
- * Auth screens matching Roulette's structure (email + Google OAuth buttons).
- * Actual auth is deferred to the Supabase milestone; these pages collect the
- * same inputs and explain dev-mode behavior.
+ * Email + password Auth against Supabase (venlabs-demo). Google / social
+ * providers are intentionally not offered.
  */
 export function AuthLayout({
   title,
@@ -19,7 +20,6 @@ export function AuthLayout({
   footer?: React.ReactNode;
 }) {
   const { dark, toggle } = useTheme();
-  const [notice] = useState<string | null>(null);
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
       <header className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
@@ -40,7 +40,6 @@ export function AuthLayout({
             <div className="mt-6">{children}</div>
             {footer && <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">{footer}</div>}
           </div>
-          {notice && <p className="mt-3 text-center text-xs text-slate-500">{notice}</p>}
         </div>
       </main>
     </div>
@@ -50,25 +49,69 @@ export function AuthLayout({
 const input =
   "w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-brand-900";
 
-function GoogleButton({ label }: { label: string }) {
+function ConfigBanner() {
+  if (supabaseConfigured) return null;
   return (
-    <button
-      type="button"
-      onClick={() => alert("Google OAuth activates with the Supabase auth milestone.")}
-      className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.7-.2-2.5H12v4.8h6.5c-.3 1.5-1.1 2.8-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.9z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 7.9-2.9l-3.9-3c-1 .7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.7-4.9H1.3v3.1C3.3 21.3 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.3 14.4c-.3-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4V6.5H1.3C.5 8.2 0 10 0 12s.5 3.8 1.3 5.5l4-3.1z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8L20 3.1C18 1.2 15.2 0 12 0 7.3 0 3.3 2.7 1.3 6.5l4 3.1c1-2.8 3.6-4.8 6.7-4.8z"/></svg>
-      {label}
-    </button>
+    <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+      Auth is not configured. Set <code className="font-mono">VITE_SUPABASE_URL</code> and{" "}
+      <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> (legacy anon JWT from the
+      venlabs-demo API settings) and rebuild the SPA.
+      {!import.meta.env.PROD && (
+        <>
+          {" "}
+          <Link to="/app" className="font-medium underline">
+            Open the local demo workspace
+          </Link>
+        </>
+      )}
+    </p>
   );
+}
+
+function FieldError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-100">
+      {message}
+    </p>
+  );
+}
+
+function emailRedirectTo(path: string): string {
+  return `${window.location.origin}${path}`;
 }
 
 export function SignIn() {
   const navigate = useNavigate();
+  const { session, loading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  if (!loading && session) return <Navigate to="/app" replace />;
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!supabase) {
+      setError("Supabase Auth is not configured for this build.");
+      return;
+    }
+    setPending(true);
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    setPending(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    navigate("/app");
+  }
+
   return (
     <AuthLayout
       title="Sign in to your account"
-      subtitle="Welcome back! Please enter your details"
+      subtitle="Welcome back — email and password only"
       footer={
         <>
           Do not have an account yet?{" "}
@@ -76,42 +119,106 @@ export function SignIn() {
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          // Dev-mode: any credentials enter the seeded demo workspace.
-          navigate("/app");
-        }}
-      >
+      <ConfigBanner />
+      <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
+        <FieldError message={error} />
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Email</span>
-          <input required type="email" placeholder="you@firm.vc" className={input} />
+          <input
+            required
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(ev) => setEmail(ev.target.value)}
+            placeholder="you@firm.vc"
+            className={input}
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Password</span>
-          <input required type="password" placeholder="••••••••" className={input} />
+          <input
+            required
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(ev) => setPassword(ev.target.value)}
+            placeholder="••••••••"
+            className={input}
+          />
         </label>
         <div className="text-right">
-          <Link to="/auth/password-reset" className="text-xs font-medium text-brand-600 hover:underline">Forgot password?</Link>
+          <Link to="/auth/reset" className="text-xs font-medium text-brand-600 hover:underline">Forgot password?</Link>
         </div>
-        <button type="submit" className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
-          Sign in with Email
+        <button
+          type="submit"
+          disabled={pending || !supabaseConfigured}
+          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? "Signing in…" : "Sign in with Email"}
         </button>
-        <div className="flex items-center gap-3 text-xs text-slate-400">
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /> or continue with <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-        </div>
-        <GoogleButton label="Sign in with Google" />
       </form>
     </AuthLayout>
   );
 }
 
 export function SignUp() {
+  const navigate = useNavigate();
+  const { session, loading } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [firm, setFirm] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  if (!loading && session) return <Navigate to="/app" replace />;
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    if (!supabase) {
+      setError("Supabase Auth is not configured for this build.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    setPending(true);
+    const { data, error: err } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: emailRedirectTo("/auth/callback"),
+        data: {
+          full_name: name,
+          firm_name: firm,
+        },
+      },
+    });
+    setPending(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    if (!data.session) {
+      setNotice("Check your email to confirm your account, then sign in.");
+      return;
+    }
+    navigate("/app");
+  }
+
   return (
     <AuthLayout
       title="Create an account"
-      subtitle="Fill the form below to create an account."
+      subtitle="Email and password — we'll create your workspace on first sign-in."
       footer={
         <>
           Already have an account?{" "}
@@ -119,49 +226,175 @@ export function SignUp() {
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          alert("Account creation activates with the Supabase auth milestone — explore the demo workspace meanwhile.");
-        }}
-      >
-        <input required placeholder="Full name" className={input} />
-        <input required type="email" placeholder="Work email" className={input} />
-        <input placeholder="Firm / company name" className={input} />
-        <input required type="password" placeholder="Password" className={input} />
-        <input required type="password" placeholder="Please repeat your new password to confirm it" className={input} />
-        <button type="submit" className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
-          Sign up with Email
+      <ConfigBanner />
+      <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
+        <FieldError message={error} />
+        {notice && (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+            {notice}
+          </p>
+        )}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Full name</span>
+          <input required placeholder="Ada Lovelace" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className={input} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Work email</span>
+          <input required type="email" placeholder="you@firm.vc" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Firm / company name</span>
+          <input placeholder="Harbor Ventures" autoComplete="organization" value={firm} onChange={(e) => setFirm(e.target.value)} className={input} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Password</span>
+          <input required type="password" placeholder="••••••••" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Confirm password</span>
+          <input required type="password" placeholder="Repeat password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={input} />
+        </label>
+        <button
+          type="submit"
+          disabled={pending || !supabaseConfigured}
+          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? "Creating account…" : "Sign up with Email"}
         </button>
-        <div className="flex items-center gap-3 text-xs text-slate-400">
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /> or continue with <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-        </div>
-        <GoogleButton label="Sign in with Google" />
       </form>
     </AuthLayout>
   );
 }
 
 export function PasswordReset() {
+  const { session } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const recovering = Boolean(session);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    if (!supabase) {
+      setError("Supabase Auth is not configured for this build.");
+      return;
+    }
+    setPending(true);
+    if (recovering) {
+      if (password !== confirm) {
+        setPending(false);
+        setError("Passwords do not match.");
+        return;
+      }
+      const { error: err } = await supabase.auth.updateUser({ password });
+      setPending(false);
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      setNotice("Password updated. You can continue to the app.");
+      return;
+    }
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: emailRedirectTo("/auth/reset"),
+    });
+    setPending(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setNotice("If that email is registered, a reset link is on its way.");
+  }
+
   return (
     <AuthLayout
-      title="Reset your password"
-      subtitle="Enter your email and we'll send you a reset link."
+      title={recovering ? "Choose a new password" : "Reset your password"}
+      subtitle={recovering ? "Enter a new password for your account." : "Enter your email and we'll send you a reset link."}
       footer={<Link to="/auth/sign-in" className="font-medium text-brand-600 hover:underline">Back to sign in</Link>}
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          alert("Password reset emails activate with the Supabase auth milestone.");
-        }}
-      >
-        <input required type="email" placeholder="you@firm.vc" className={input} />
-        <button type="submit" className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
-          Send reset link
+      <ConfigBanner />
+      <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
+        <FieldError message={error} />
+        {notice && (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+            {notice}{" "}
+            {recovering && (
+              <Link to="/app" className="font-medium underline">
+                Open app
+              </Link>
+            )}
+          </p>
+        )}
+        {recovering ? (
+          <>
+            <input required type="password" placeholder="New password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
+            <input required type="password" placeholder="Confirm new password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={input} />
+          </>
+        ) : (
+          <input required type="email" placeholder="you@firm.vc" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
+        )}
+        <button
+          type="submit"
+          disabled={pending || !supabaseConfigured}
+          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? "Please wait…" : recovering ? "Update password" : "Send reset link"}
         </button>
       </form>
     </AuthLayout>
   );
+}
+
+export function AuthCallback() {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) {
+      navigate("/auth/sign-in", { replace: true });
+      return;
+    }
+    let cancelled = false;
+    void supabase.auth.getSession().then(({ data, error: err }) => {
+      if (cancelled) return;
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      navigate(data.session ? "/app" : "/auth/sign-in", { replace: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
+  return (
+    <AuthLayout title="Signing you in" subtitle="Finishing email confirmation…">
+      <FieldError message={error} />
+      {!error && <p className="text-sm text-slate-500">One moment.</p>}
+    </AuthLayout>
+  );
+}
+
+export function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { loading, session } = useAuth();
+  const location = useLocation();
+
+  if (!isAuthRequired()) return <>{children}</>;
+  if (loading) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-paper-100 text-sm text-paper-600">
+        Loading session…
+      </div>
+    );
+  }
+  if (!session) {
+    return <Navigate to="/auth/sign-in" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
 }

@@ -15,7 +15,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing → implemented in this goal unl
 | **Blog index + posts** | ✅ |
 | **Changelog index + entries** | ✅ |
 | **Legal: privacy/terms/cookie** | ✅ |
-| **Auth screens: sign-in / sign-up / password-reset** | ✅ (UI now; Supabase wiring next phase) |
+| **Auth screens: sign-in / sign-up / password-reset** | ✅ (Supabase email+password; no Google) |
 | Footer nav incl. Company/Resources/Legal columns | ✅ (extend links) |
 
 ## B. Product features surfaced by legal/changelog

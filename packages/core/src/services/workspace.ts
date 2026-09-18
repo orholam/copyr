@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import {
   apiKeys,
@@ -13,24 +13,45 @@ import {
   users,
   workspaces,
 } from "@copyr/db/schema.js";
-import { sql } from "drizzle-orm";
 import type { Actor } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { generateKeyBetween } from "../fractional.js";
 import { logActivity } from "../activity.js";
 import { toIso } from "../mappers.js";
+import { verifySupabaseJwt, type SupabaseJwtClaims } from "../supabase-jwt.js";
+import { ensureSystemAgents } from "./agents.js";
 
-/* ── session resolution (auth-lite; Supabase lands later) ──────────── */
+/* ── session resolution ────────────────────────────────────────────── */
 
 export interface ResolvedSession extends Session {
   workspaceSlug: string;
 }
 
+export interface ResolveSessionOpts {
+  apiKey?: string | null;
+  accessToken?: string | null;
+  workspaceSlug?: string | null;
+  /**
+   * Trusted internal callers (inbound email webhooks, MCP stdio) may resolve
+   * by workspace slug without a user JWT. HTTP requests should leave this unset
+   * so `ALLOW_DEV_WORKSPACE_AUTH` (off in production) is the gate.
+   */
+  allowSlug?: boolean;
+}
+
 export async function resolveSession(
   ctx: CoreContext,
-  opts: { apiKey?: string | null; workspaceSlug?: string | null },
+  opts: ResolveSessionOpts,
 ): Promise<ResolvedSession> {
   if (opts.apiKey) return resolveByApiKey(ctx, opts.apiKey);
+  if (opts.accessToken) {
+    return resolveByAccessToken(ctx, opts.accessToken, opts.workspaceSlug);
+  }
+
+  const allowSlug = opts.allowSlug ?? ctx.config.ALLOW_DEV_WORKSPACE_AUTH;
+  if (!allowSlug) {
+    throw new CoreError("missing credentials", { code: "unauthorized", status: 401 });
+  }
 
   const slug = opts.workspaceSlug ?? ctx.config.DEV_WORKSPACE_SLUG;
   const [ws] = await ctx.db.select().from(workspaces).where(eq(workspaces.slug, slug));
@@ -44,6 +65,184 @@ export async function resolveSession(
     .limit(1);
   const actor: Actor = { userId: owner?.userId ?? null, source: "api" };
   return { workspaceId: ws.id, workspaceSlug: ws.slug, actor };
+}
+
+async function resolveByAccessToken(
+  ctx: CoreContext,
+  accessToken: string,
+  preferredSlug?: string | null,
+): Promise<ResolvedSession> {
+  const claims = await verifySupabaseJwt(accessToken, {
+    supabaseUrl: ctx.config.SUPABASE_URL,
+    jwtSecret: ctx.config.SUPABASE_JWT_SECRET,
+    anonKey: ctx.config.SUPABASE_ANON_KEY,
+  });
+  return ensureUserWorkspace(ctx, claims, preferredSlug);
+}
+
+function displayNameFromClaims(claims: SupabaseJwtClaims): string {
+  const meta = claims.userMetadata;
+  for (const key of ["full_name", "name", "fullName"]) {
+    const v = meta[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  if (claims.email) return claims.email.split("@")[0] ?? "Member";
+  return "Member";
+}
+
+function firmNameFromClaims(claims: SupabaseJwtClaims): string | null {
+  const meta = claims.userMetadata;
+  for (const key of ["firm_name", "firmName", "company", "workspace"]) {
+    const v = meta[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function slugify(raw: string): string {
+  const s = raw
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  return s || "workspace";
+}
+
+export async function ensureUserWorkspace(
+  ctx: CoreContext,
+  claims: SupabaseJwtClaims,
+  preferredSlug?: string | null,
+): Promise<ResolvedSession> {
+  const email = claims.email?.trim().toLowerCase() ?? null;
+  const name = displayNameFromClaims(claims);
+
+  let user =
+    (await ctx.db.select().from(users).where(eq(users.id, claims.sub)).limit(1))[0] ??
+    (email
+      ? (await ctx.db.select().from(users).where(sql`lower(${users.email}) = ${email}`).limit(1))[0]
+      : undefined);
+
+  if (!user) {
+    if (!email) {
+      throw new CoreError("session is missing an email", { code: "unauthorized", status: 401 });
+    }
+    try {
+      const [created] = await ctx.db
+        .insert(users)
+        .values({ id: claims.sub, email, name })
+        .returning();
+      user = created;
+    } catch {
+      user =
+        (await ctx.db.select().from(users).where(eq(users.id, claims.sub)).limit(1))[0] ??
+        (await ctx.db.select().from(users).where(sql`lower(${users.email}) = ${email}`).limit(1))[0];
+    }
+  }
+  if (!user) {
+    throw new CoreError("could not provision user", { code: "unauthorized", status: 401 });
+  }
+
+  if (user.name !== name && name !== "Member") {
+    await ctx.db.update(users).set({ name }).where(eq(users.id, user.id));
+    user = { ...user, name };
+  }
+
+  const memberRows = await ctx.db
+    .select({
+      workspaceId: memberships.workspaceId,
+      role: memberships.role,
+      slug: workspaces.slug,
+    })
+    .from(memberships)
+    .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+    .where(eq(memberships.userId, user.id));
+
+  if (preferredSlug) {
+    const preferred = memberRows.find((m) => m.slug === preferredSlug);
+    if (preferred) {
+      return {
+        workspaceId: preferred.workspaceId,
+        workspaceSlug: preferred.slug,
+        actor: { userId: user.id, source: "api" },
+      };
+    }
+  }
+
+  if (memberRows.length > 0) {
+    const chosen = memberRows.find((m) => m.role === "owner") ?? memberRows[0]!;
+    return {
+      workspaceId: chosen.workspaceId,
+      workspaceSlug: chosen.slug,
+      actor: { userId: user.id, source: "api" },
+    };
+  }
+
+  const provisioned = await provisionOwnerWorkspace(ctx, {
+    userId: user.id,
+    name: firmNameFromClaims(claims) ?? `${name}'s workspace`,
+    slugSeed: firmNameFromClaims(claims) ?? (email ? email.split("@")[0]! : "workspace"),
+  });
+  return {
+    workspaceId: provisioned.workspaceId,
+    workspaceSlug: provisioned.workspaceSlug,
+    actor: { userId: user.id, source: "api" },
+  };
+}
+
+async function uniqueSlug(ctx: CoreContext, seed: string): Promise<string> {
+  const base = slugify(seed);
+  for (let i = 0; i < 8; i++) {
+    const candidate = i === 0 ? base : `${base.slice(0, 32)}-${randomBytes(2).toString("hex")}`;
+    const [hit] = await ctx.db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, candidate)).limit(1);
+    if (!hit) return candidate;
+  }
+  return `${base.slice(0, 24)}-${randomBytes(4).toString("hex")}`;
+}
+
+async function provisionOwnerWorkspace(
+  ctx: CoreContext,
+  input: { userId: string; name: string; slugSeed: string },
+): Promise<{ workspaceId: string; workspaceSlug: string }> {
+  const slug = await uniqueSlug(ctx, input.slugSeed);
+  const [ws] = await ctx.db
+    .insert(workspaces)
+    .values({ name: input.name, slug, plan: "trial", aiCreditsBalance: 500 })
+    .returning();
+
+  await ctx.db.insert(memberships).values({
+    workspaceId: ws.id,
+    userId: input.userId,
+    role: "owner",
+  });
+
+  const [pipeline] = await ctx.db
+    .insert(pipelines)
+    .values({ workspaceId: ws.id, name: "Deal Flow", isDefault: true, position: 0 })
+    .returning();
+
+  await ctx.db.insert(stages).values([
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Intake", color: "#94a3b8", kind: "active", position: 0 },
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Initial Review", color: "#6366f1", kind: "active", position: 1 },
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Due Diligence", color: "#f59e0b", kind: "active", position: 2 },
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Partner Meeting", color: "#8b5cf6", kind: "active", position: 3 },
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Committed", color: "#10b981", kind: "won", position: 4 },
+    { workspaceId: ws.id, pipelineId: pipeline.id, name: "Passed", color: "#ef4444", kind: "lost", position: 5 },
+  ]);
+
+  await ctx.db.insert(creditLedger).values({
+    workspaceId: ws.id,
+    delta: 500,
+    reason: "signup_grant",
+    balanceAfter: 500,
+  });
+
+  await ensureSystemAgents(ctx, ws.id).catch(() => undefined);
+
+  return { workspaceId: ws.id, workspaceSlug: ws.slug };
 }
 
 async function resolveByApiKey(ctx: CoreContext, secret: string): Promise<ResolvedSession> {

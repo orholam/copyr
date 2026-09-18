@@ -45,15 +45,26 @@ describe("api", () => {
       const res = await app.inject({ method: "GET", url: "/api/v1/missing" });
       expect(res.headers["content-type"]).toContain("application/json");
     });
+
+    it("rejects a malformed bearer token without hitting slug fallback", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/v1/me",
+        headers: { authorization: "Bearer not-a-jwt" },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toMatchObject({ code: "unauthorized" });
+    });
   });
 
-  describe.skipIf(!dbUp)("authenticated routes", () => {
+  describe("authenticated routes", () => {
     let headers: { "x-api-key": string };
     let agentSession: Session;
     let createdCompanyId: string | undefined;
     const companyName = `Api Test Co ${Date.now()}`;
 
     beforeAll(async () => {
+      if (!dbUp) return;
       const devSession = await resolveSession(core.ctx, {});
       const key = await createApiKey(core.ctx, devSession, "route-tests");
       headers = { "x-api-key": key.secret };
@@ -61,6 +72,7 @@ describe("api", () => {
     });
 
     afterAll(async () => {
+      if (!dbUp) return;
       if (createdCompanyId) {
         await core.companies
           .deleteCompany(core.ctx, agentSession, createdCompanyId)
@@ -68,17 +80,8 @@ describe("api", () => {
       }
     });
 
-    it("rejects invalid api keys with a 401 envelope", async () => {
-      const res = await app.inject({
-        method: "GET",
-        url: "/api/v1/companies",
-        headers: { "x-api-key": "ck_invalid-invalid-invalid" },
-      });
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toMatchObject({ code: "unauthorized" });
-    });
-
-    it("maps zod validation failures to a 422 with field details", async () => {
+    it("maps zod validation failures to a 422 with field details", async ({ skip }) => {
+      if (!dbUp) skip();
       const res = await app.inject({
         method: "POST",
         url: "/api/v1/companies",
@@ -92,7 +95,8 @@ describe("api", () => {
       expect(paths).toContain("name");
     });
 
-    it("creates, reads, updates and deletes a company end-to-end", async () => {
+    it("creates, reads, updates and deletes a company end-to-end", async ({ skip }) => {
+      if (!dbUp) skip();
       const created = await app.inject({
         method: "POST",
         url: "/api/v1/companies",
@@ -140,7 +144,8 @@ describe("api", () => {
       expect(gone.statusCode).toBe(404);
     });
 
-    it("lists companies as a paginated envelope and filters by search", async () => {
+    it("lists companies as a paginated envelope and filters by search", async ({ skip }) => {
+      if (!dbUp) skip();
       const res = await app.inject({
         method: "GET",
         url: `/api/v1/companies?q=${encodeURIComponent(companyName)}&limit=10`,
@@ -154,7 +159,8 @@ describe("api", () => {
       expect(body.items.find((c: { name: string }) => c.name === companyName)).toBeUndefined();
     });
 
-    it("exposes workspace-level authority to api-key callers on /me", async () => {
+    it("exposes workspace-level authority to api-key callers on /me", async ({ skip }) => {
+      if (!dbUp) skip();
       const res = await app.inject({
         method: "GET",
         url: "/api/v1/me/permissions",

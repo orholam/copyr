@@ -116,7 +116,7 @@ const routes: FastifyPluginAsync = async (app) => {
     const payload = inboundEmailPayload.parse(req.body);
     const slug = new URL(req.url, "http://x").searchParams.get("workspace");
     const { resolveSession } = await import("@copyr/core");
-    const session = await resolveSession(core().ctx, { workspaceSlug: slug });
+    const session = await resolveSession(core().ctx, { workspaceSlug: slug, allowSlug: true });
     const email = await core().emails.ingestEmail(core().ctx, session.workspaceId, payload);
     return reply.status(202).send({ id: email.id, status: email.processingStatus });
   });

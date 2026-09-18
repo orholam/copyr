@@ -61,6 +61,25 @@ const schema = z.object({
   WEB_URL: z.string().url().default("http://localhost:5173"),
 
   DEV_WORKSPACE_SLUG: z.string().default("harbor-ventures"),
+  /**
+   * When true, `X-Workspace-Slug` / `DEV_WORKSPACE_SLUG` can authenticate a
+   * request without a JWT or API key. Defaults ON in development/test and OFF
+   * in production so demo slug fallback cannot leak into live deploys.
+   */
+  ALLOW_DEV_WORKSPACE_AUTH: z.preprocess(emptyToUndef, z.string().optional()),
+
+  /** venlabs-demo: `https://cdsngnauduhiaidzncie.supabase.co` */
+  SUPABASE_URL: z.preprocess(emptyToUndef, z.string().url().optional()),
+  /**
+   * Legacy anon (JWT) or publishable key — used only to call Auth `/user` when
+   * verifying HS256 access tokens without `SUPABASE_JWT_SECRET`. Never a service-role key.
+   */
+  SUPABASE_ANON_KEY: z.preprocess(emptyToUndef, z.string().optional()),
+  /**
+   * JWT signing secret from Supabase → Project Settings → API (legacy HS256).
+   * Prefer this on the API host; do not put it in the SPA.
+   */
+  SUPABASE_JWT_SECRET: z.preprocess(emptyToUndef, z.string().optional()),
 
   /** Session-mode or direct Postgres URL. Used for migrations and pg-boss (LISTEN/NOTIFY). */
   DATABASE_URL: z
@@ -107,18 +126,37 @@ const schema = z.object({
   AUTO_MIGRATE: envBoolean(false),
 });
 
-export type AppConfig = z.infer<typeof schema>;
+type ParsedConfig = z.infer<typeof schema>;
+
+export type AppConfig = Omit<ParsedConfig, "ALLOW_DEV_WORKSPACE_AUTH"> & {
+  ALLOW_DEV_WORKSPACE_AUTH: boolean;
+};
+
+function parseAllowDevWorkspaceAuth(
+  raw: string | undefined,
+  nodeEnv: AppConfig["NODE_ENV"],
+): boolean {
+  if (raw === undefined) return nodeEnv !== "production";
+  const s = raw.trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(s)) return false;
+  if (["true", "1", "yes", "on"].includes(s)) return true;
+  return nodeEnv !== "production";
+}
 
 let cached: AppConfig | undefined;
 
 export function loadConfig(overrides: Partial<Record<string, string>> = {}): AppConfig {
   if (cached && Object.keys(overrides).length === 0) return cached;
   const parsed = schema.parse({ ...process.env, ...overrides });
-  if (!parsed.STORAGE_ENDPOINT && parsed.NODE_ENV !== "production") {
-    parsed.STORAGE_ENDPOINT = "http://localhost:9000";
+  const cfg: AppConfig = {
+    ...parsed,
+    ALLOW_DEV_WORKSPACE_AUTH: parseAllowDevWorkspaceAuth(parsed.ALLOW_DEV_WORKSPACE_AUTH, parsed.NODE_ENV),
+  };
+  if (!cfg.STORAGE_ENDPOINT && cfg.NODE_ENV !== "production") {
+    cfg.STORAGE_ENDPOINT = "http://localhost:9000";
   }
-  if (Object.keys(overrides).length === 0) cached = parsed;
-  return parsed;
+  if (Object.keys(overrides).length === 0) cached = cfg;
+  return cfg;
 }
 
 export function resetConfigCache(): void {
