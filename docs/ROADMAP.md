@@ -1,4 +1,4 @@
-# Copyr Roadmap
+# VentureLabs Roadmap
 
 Multi-session build plan. Each phase ends with a working, verifiable system.
 

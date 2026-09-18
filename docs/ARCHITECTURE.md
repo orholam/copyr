@@ -1,13 +1,13 @@
-# Copyr — Architecture & Strategy
+# VentureLabs — Architecture & Strategy
 
-> Copyr is an AI-native, agent-first clone of [useroulette.com](https://useroulette.com)
+> VentureLabs is an AI-native, agent-first clone of [useroulette.com](https://useroulette.com)
 > (AI-powered deal flow CRM for VC firms), rebuilt with a cleaner architecture where
 > **every capability is exposed to AI agents via MCP** and the human UI is just
 > another client of the same core.
 
 ## 1. Product scope (full Roulette parity)
 
-| Area | Roulette feature | Copyr implementation |
+| Area | Roulette feature | VentureLabs implementation |
 |---|---|---|
 | Deal ingestion | Paste DocSend/Pitch/Drive link → converted permanent PDF | `documents.from-link` + `convert-link` job (provider-abstracted; mock resolver locally) |
 | Deal ingestion | Bulk PDF upload w/ auto-processing | Multipart upload → storage → parse job |

@@ -33,8 +33,8 @@ export default function PublicIntakeForm() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-white p-4">
       <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">c</span>
-          <span className="font-semibold tracking-tight text-slate-900">Copyr Pitch</span>
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">V</span>
+          <span className="font-semibold tracking-tight text-slate-900">VentureLabs Pitch</span>
         </div>
 
         {error ? (
@@ -120,7 +120,7 @@ export default function PublicIntakeForm() {
         <p className="mt-6 border-t border-slate-100 pt-4 text-center text-[11px] text-slate-400">
           Powered by{" "}
           <Link to="/" className="font-medium text-brand-600 hover:underline">
-            Copyr
+            VentureLabs
           </Link>{" "}
           — your pitch goes directly into the firm's review pipeline.
         </p>
@@ -248,7 +248,7 @@ function SharedRecord({ data }: { data: Record<string, unknown> }) {
       )}
       <p className="mt-8 border-t border-slate-100 pt-4 text-center text-[11px] text-slate-400">
         Shared via{" "}
-        <Link to="/" className="font-medium text-brand-600 hover:underline">Copyr</Link>
+        <Link to="/" className="font-medium text-brand-600 hover:underline">VentureLabs</Link>
       </p>
     </>
   );

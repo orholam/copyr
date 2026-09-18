@@ -160,7 +160,7 @@ export default function AutomationsTab() {
       ))}
       {!workflowsQ.isLoading && !workflowsQ.data?.length && (
         <div className="rounded-xl border border-dashed border-paper-400 py-12 text-center text-sm text-paper-500">
-          No automations yet — create one to let Copyr act on events for you.
+          No automations yet — create one to let VentureLabs act on events for you.
         </div>
       )}
 

@@ -13,13 +13,13 @@ export const POSTS: Post[] = [
   {
     slug: "launching-copyr-deal-management-for-vc",
     date: "2026-08-22",
-    title: "Launching Copyr: Deal Management for VC",
+    title: "Launching VentureLabs: Deal Management for VC",
     category: "Product",
     excerpt:
-      "We built Copyr because nothing else solved the real bottleneck in venture capital: ingestion. Here is what it does and why we are opening it up.",
+      "We built VentureLabs because nothing else solved the real bottleneck in venture capital: ingestion. Here is what it does and why we are opening it up.",
     body: [
       "Every VC firm drowns in the same way: decks arrive by email, links expire, data lives in inboxes instead of a system of record. Analysts spend hours per week doing data entry that no one chose as a job.",
-      "Copyr attacks ingestion first. Forward an email — AI identifies every company mentioned, creates records, and files attachments. Paste a DocSend link — it becomes a permanent PDF attached to the company. Drop fifty PDFs — they parse overnight.",
+      "VentureLabs attacks ingestion first. Forward an email — AI identifies every company mentioned, creates records, and files attachments. Paste a DocSend link — it becomes a permanent PDF attached to the company. Drop fifty PDFs — they parse overnight.",
       "The second bet is agent-native. Every capability in the product is exposed through MCP, so your AI assistants can triage an inbox, move deals, or draft weekly reviews with the same tools your team uses.",
       "This is the CRM we wanted as investors. We're opening it up today — the seeded demo workspace shows the entire flow in under five minutes.",
     ],
@@ -45,7 +45,7 @@ export const POSTS: Post[] = [
       "Why solo GP funds are growing fast and how individual fund managers are competing with larger firms for the best deals.",
     body: [
       "Solo GPs now close funds at a pace the industry hasn't seen before. Their constraint isn't capital — it's operational leverage.",
-      "Automation is the great equalizer: a one-person firm running Copyr ingests and triages deal flow like a team of three, which changes who gets to the best deals first.",
+      "Automation is the great equalizer: a one-person firm running VentureLabs ingests and triages deal flow like a team of three, which changes who gets to the best deals first.",
     ],
   },
   {
@@ -69,7 +69,7 @@ export const POSTS: Post[] = [
       "Best practices for capturing meeting notes during founder calls and turning them into structured deal intelligence.",
     body: [
       "Notes rot in private docs. The firms that learn fastest attach notes directly to the deal record within minutes of a call ending, @mention the partner who owns follow-ups, and convert every 'we should check' into a tracked next step.",
-      "With Copyr's notes + mentions, each note lands on both the deal timeline and the mentioned teammate's audit trail — nothing falls through.",
+      "With VentureLabs notes + mentions, each note lands on both the deal timeline and the mentioned teammate's audit trail — nothing falls through.",
     ],
   },
   {
@@ -104,7 +104,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     slug: "mcp-server-and-agent-tools",
     date: "2026-08-21",
     title: "MCP server & 34 agent tools",
-    body: "Copyr is now fully operable by AI agents: a Model Context Protocol server exposes pipelines, ingestion, analytics, sharing and more over stdio and streamable HTTP.",
+    body: "VentureLabs is now fully operable by AI agents: a Model Context Protocol server exposes pipelines, ingestion, analytics, sharing and more over stdio and streamable HTTP.",
   },
   {
     slug: "browser-capture-endpoint",

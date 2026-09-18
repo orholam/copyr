@@ -1,5 +1,5 @@
 /**
- * Curated OpenAPI 3.1 description of the Copyr REST surface.
+ * Curated OpenAPI 3.1 description of the VentureLabs REST surface.
  *
  * Route handlers validate with zod at runtime; this document is the
  * machine-readable companion for agents and integrations (kept in sync
@@ -112,7 +112,7 @@ export function buildOpenApi(): Record<string, unknown> {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Copyr API",
+      title: "VentureLabs API",
       version: "1.0.0",
       description:
         "AI-native deal-flow CRM for venture capital. " +

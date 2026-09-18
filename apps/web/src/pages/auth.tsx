@@ -27,9 +27,9 @@ export function AuthLayout({
     <div className="flex min-h-screen flex-col bg-paper-100">
       <header className="border-b border-paper-900/[0.08] bg-paper-100/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2.5" aria-label="Copyr home">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">C</span>
-            <span className="font-serif text-xl tracking-tight text-paper-900">Copyr</span>
+          <Link to="/" className="flex items-center gap-2.5" aria-label="VentureLabs home">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">V</span>
+            <span className="font-serif text-xl tracking-tight text-paper-900">VentureLabs</span>
           </Link>
           <ThemeToggle dark={dark} onToggle={toggle} />
         </div>
