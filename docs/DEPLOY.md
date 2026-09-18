@@ -17,8 +17,10 @@ mode. Two configs used to fight the Vite dashboard default (`outputDirectory: di
 2. **Root Directory: leave empty** (repo root). Uses root `vercel.json`:
    - `installCommand`: `corepack enable && pnpm install --frozen-lockfile=false`
    - `buildCommand`: `pnpm --filter @copyr/web build`
-   - `outputDirectory`: `dist` (Vite writes `apps/web/dist`, then the web build
-     mirrors it to repo-root `dist` so the Vite preset’s default still works)
+   - `outputDirectory`: `dist`. After Vite writes `apps/web/dist`, the web build
+     also writes `dist` and `.vercel/output` at the repo root **and under every
+     `apps/*` folder**, because VenLabs/Hobby Turbo imports often collect output
+     from a non-web Root Directory.
 3. Framework: **Vite** (`vercel.json`). Repo-root `./dist` is **not** gitignored;
    a gitignored Output Directory looks empty to Vercel even after the mirror step.
 4. If the import wizard filled Root Directory `apps/web`, **clear it** and redeploy.

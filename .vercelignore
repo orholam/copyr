@@ -1,6 +1,0 @@
-# .gitignore still hides apps/*/dist. Re-include SPA output so Vercel does
-# not treat the Output Directory as empty after the build.
-!dist
-!dist/**
-!apps/web/dist
-!apps/web/dist/**

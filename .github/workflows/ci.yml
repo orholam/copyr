@@ -45,6 +45,9 @@ jobs:
           pnpm --filter @copyr/web build
           test -f apps/web/dist/index.html
           test -f dist/index.html
+          test -f apps/api/dist/index.html
+          test -f .vercel/output/static/index.html
+          test -f .vercel/output/config.json
 
   docker:
     runs-on: ubuntu-latest
