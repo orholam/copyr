@@ -7,6 +7,9 @@ import { isAuthRequired, supabase, supabaseConfigured } from "../lib/supabase";
 /**
  * Email + password Auth against Supabase (venlabs-demo). Google / social
  * providers are intentionally not offered.
+ *
+ * Colors use inverted paper tokens (not `text-white` / slate) so dark mode
+ * keeps the same contrast as the rest of the product.
  */
 export function AuthLayout({
   title,
@@ -21,12 +24,12 @@ export function AuthLayout({
 }) {
   const { dark, toggle } = useTheme();
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
-      <header className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+    <div className="flex min-h-screen flex-col bg-paper-100">
+      <header className="border-b border-paper-900/[0.08] bg-paper-100/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <Link to="/" className="flex items-center gap-2.5" aria-label="VentureLabs home">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">V</span>
-            <span className="font-serif font-semibold tracking-tight text-slate-900 dark:text-white">VentureLabs</span>
+            <span className="font-serif text-xl tracking-tight text-paper-900">VentureLabs</span>
           </Link>
           <ThemeToggle dark={dark} onToggle={toggle} />
         </div>
@@ -34,11 +37,11 @@ export function AuthLayout({
 
       <main className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+          <div className="rounded-2xl border border-paper-900/[0.09] bg-white p-8 shadow-card">
+            <h1 className="font-serif text-2xl font-semibold tracking-tight text-paper-900">{title}</h1>
+            <p className="mt-1.5 text-sm text-paper-600">{subtitle}</p>
             <div className="mt-6">{children}</div>
-            {footer && <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">{footer}</div>}
+            {footer && <div className="mt-6 border-t border-paper-900/[0.08] pt-4 text-center text-xs text-paper-500">{footer}</div>}
           </div>
         </div>
       </main>
@@ -47,12 +50,15 @@ export function AuthLayout({
 }
 
 const input =
-  "w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-brand-900";
+  "w-full rounded-lg border border-paper-900/[0.16] bg-white px-3 py-2.5 text-sm text-paper-900 outline-none transition placeholder:text-paper-400 hover:border-paper-900/[0.28] focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10";
+
+const primaryBtn =
+  "btn-ink w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-paper-50 disabled:cursor-not-allowed disabled:opacity-60";
 
 function ConfigBanner() {
   if (supabaseConfigured) return null;
   return (
-    <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+    <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
       Auth is not configured. Set <code className="font-mono">VITE_SUPABASE_URL</code> and{" "}
       <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> (legacy anon JWT from the
       venlabs-demo API settings) and rebuild the SPA.
@@ -71,7 +77,7 @@ function ConfigBanner() {
 function FieldError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-100">
+    <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
       {message}
     </p>
   );
@@ -115,7 +121,7 @@ export function SignIn() {
       footer={
         <>
           Do not have an account yet?{" "}
-          <Link to="/auth/sign-up" className="font-medium text-brand-600 hover:underline">Sign up</Link>
+          <Link to="/auth/sign-up" className="font-medium text-brand-700 hover:underline">Sign up</Link>
         </>
       }
     >
@@ -123,7 +129,7 @@ export function SignIn() {
       <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
         <FieldError message={error} />
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Email</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Email</span>
           <input
             required
             type="email"
@@ -135,7 +141,7 @@ export function SignIn() {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Password</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Password</span>
           <input
             required
             type="password"
@@ -147,13 +153,9 @@ export function SignIn() {
           />
         </label>
         <div className="text-right">
-          <Link to="/auth/reset" className="text-xs font-medium text-brand-600 hover:underline">Forgot password?</Link>
+          <Link to="/auth/reset" className="text-xs font-medium text-brand-700 hover:underline">Forgot password?</Link>
         </div>
-        <button
-          type="submit"
-          disabled={pending || !supabaseConfigured}
-          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending || !supabaseConfigured} className={primaryBtn}>
           {pending ? "Signing in…" : "Sign in with Email"}
         </button>
       </form>
@@ -222,7 +224,7 @@ export function SignUp() {
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/auth/sign-in" className="font-medium text-brand-600 hover:underline">Sign in</Link>
+          <Link to="/auth/sign-in" className="font-medium text-brand-700 hover:underline">Sign in</Link>
         </>
       }
     >
@@ -230,35 +232,31 @@ export function SignUp() {
       <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
         <FieldError message={error} />
         {notice && (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {notice}
           </p>
         )}
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Full name</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Full name</span>
           <input required placeholder="Ada Lovelace" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} className={input} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Work email</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Work email</span>
           <input required type="email" placeholder="you@firm.vc" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Firm / company name</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Firm / company name</span>
           <input placeholder="Harbor Ventures" autoComplete="organization" value={firm} onChange={(e) => setFirm(e.target.value)} className={input} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Password</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Password</span>
           <input required type="password" placeholder="••••••••" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Confirm password</span>
+          <span className="mb-1 block text-xs font-medium text-paper-700">Confirm password</span>
           <input required type="password" placeholder="Repeat password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={input} />
         </label>
-        <button
-          type="submit"
-          disabled={pending || !supabaseConfigured}
-          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending || !supabaseConfigured} className={primaryBtn}>
           {pending ? "Creating account…" : "Sign up with Email"}
         </button>
       </form>
@@ -315,13 +313,13 @@ export function PasswordReset() {
     <AuthLayout
       title={recovering ? "Choose a new password" : "Reset your password"}
       subtitle={recovering ? "Enter a new password for your account." : "Enter your email and we'll send you a reset link."}
-      footer={<Link to="/auth/sign-in" className="font-medium text-brand-600 hover:underline">Back to sign in</Link>}
+      footer={<Link to="/auth/sign-in" className="font-medium text-brand-700 hover:underline">Back to sign in</Link>}
     >
       <ConfigBanner />
       <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
         <FieldError message={error} />
         {notice && (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {notice}{" "}
             {recovering && (
               <Link to="/app" className="font-medium underline">
@@ -338,11 +336,7 @@ export function PasswordReset() {
         ) : (
           <input required type="email" placeholder="you@firm.vc" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
         )}
-        <button
-          type="submit"
-          disabled={pending || !supabaseConfigured}
-          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending || !supabaseConfigured} className={primaryBtn}>
           {pending ? "Please wait…" : recovering ? "Update password" : "Send reset link"}
         </button>
       </form>
@@ -376,7 +370,7 @@ export function AuthCallback() {
   return (
     <AuthLayout title="Signing you in" subtitle="Finishing email confirmation…">
       <FieldError message={error} />
-      {!error && <p className="text-sm text-slate-500">One moment.</p>}
+      {!error && <p className="text-sm text-paper-500">One moment.</p>}
     </AuthLayout>
   );
 }

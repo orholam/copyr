@@ -91,6 +91,7 @@
 }
 
 html {
+  color-scheme: light;
   font-family:
     "Inter",
     ui-sans-serif,
@@ -102,6 +103,10 @@ html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   letter-spacing: -0.011em;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -279,6 +284,26 @@ input,
 textarea,
 select {
   color-scheme: light;
+}
+.dark input,
+.dark textarea,
+.dark select {
+  color-scheme: dark;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #302d28;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+  caret-color: #302d28;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #eeeae1;
+  box-shadow: 0 0 0 1000px #1f1e1a inset;
+  caret-color: #eeeae1;
 }
 
 :focus-visible {
