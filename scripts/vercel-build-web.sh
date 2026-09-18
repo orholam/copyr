@@ -21,6 +21,7 @@ if [ ! -d "$SRC" ]; then
 fi
 copy_dist() {
   local dest="$1"
+  mkdir -p "$(dirname "$dest")"
   if [ -d "$dest" ] && [ "$(cd "$dest" && pwd)" = "$(cd "$SRC" && pwd)" ]; then
     return 0
   fi
