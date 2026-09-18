@@ -109,7 +109,7 @@ VenLabs Vercel is Origin-git only: [`docs/ORIGIN.md`](docs/ORIGIN.md).
 
 Copy `.env.example` → `.env`. Highlights:
 - `AI_PROVIDER=mock` runs fully offline/free; set `openai` + `OPENAI_API_KEY` for real LLMs.
-- `DEV_WORKSPACE_SLUG` scopes requests until Supabase auth lands.
+- Email+password Auth uses `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` on the SPA and `SUPABASE_URL` / `SUPABASE_JWT_SECRET` on the API. Slug-only access is `ALLOW_DEV_WORKSPACE_AUTH` (off in production).
 - Agents authenticate via `POST /api-keys` (Settings → API Keys in the app).
 
 Production (venlabs-demo): point `DATABASE_URL` at the Supabase **session** pooler and
@@ -120,8 +120,9 @@ Shareable demo: Vite SPA on **Vercel** (`vercel.json` + `apps/web/vercel.json`) 
 (`render.yaml`, `Dockerfile.api`).
 
 **The API must be a separate host.** Fastify is not deployed as Vercel serverless
-(SSE, uploads, pg-boss workers). Vercel env is only `VITE_API_URL` + `VITE_WORKSPACE_SLUG`.
-Supabase `DATABASE_URL` / Storage S3 vars go on the API host — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+(SSE, uploads, pg-boss workers). Vercel env is `VITE_API_URL`, `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY` (and optional `VITE_WORKSPACE_SLUG`).
+Supabase `DATABASE_URL` / Storage S3 / `SUPABASE_JWT_SECRET` vars go on the API host — see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 VenLabs Vercel imports **Cursor Origin** git, not GitHub. Playbook to mirror this
 tree (excluding `intelligence/`): [`docs/ORIGIN.md`](docs/ORIGIN.md).
@@ -132,4 +133,4 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md). Phase 1–3 core is complete and E2E-t
 ingestion (email/link/upload/manual/form), AI triage+extraction w/ credits, kanban/table
 pipeline, relationship intel, portfolio timelines, share links w/ access logs, analytics,
 MCP everywhere. Remaining: copilot polish, duplicate merge, real link-converter providers,
-Supabase auth, IaC.
+IaC.

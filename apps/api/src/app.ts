@@ -17,6 +17,13 @@ declare module "fastify" {
   }
 }
 
+function bearerToken(header: string | string[] | undefined): string | null {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (!raw) return null;
+  const m = /^Bearer\s+(\S+)/i.exec(raw.trim());
+  return m?.[1] ?? null;
+}
+
 export async function buildApp(opts: { core?: Core } = {}) {
   const config = loadConfig();
   const core = opts.core ?? (await createCore({ runWorkers: process.env.API_RUN_WORKERS !== "false" }));
@@ -40,6 +47,19 @@ export async function buildApp(opts: { core?: Core } = {}) {
       cb(null, isAllowedCorsOrigin(origin, config));
     },
     credentials: true,
+    // @fastify/cors defaults to CORS-safelisted methods only (GET, HEAD, POST).
+    // Without an explicit list, SPA preflights for PATCH/PUT/DELETE fail even
+    // when the Origin is allowed. Keep this list in sync with the HTTP verbs
+    // the API actually serves.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Accept",
+      "Content-Type",
+      "Authorization",
+      "X-API-Key",
+      "X-Workspace-Slug",
+      "X-Webhook-Secret",
+    ],
   });
   await app.register(multipart, {
     limits: { fileSize: 100 * 1024 * 1024 },
@@ -54,14 +74,16 @@ export async function buildApp(opts: { core?: Core } = {}) {
   const planCache = new Map<string, { plan: string; at: number }>();
   const resolvePlan = async (req: FastifyRequest): Promise<string> => {
     const apiKey = typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : null;
+    const accessToken = bearerToken(req.headers.authorization);
     const slug =
       (req.headers["x-workspace-slug"] as string | undefined) ?? config.DEV_WORKSPACE_SLUG;
-    const cacheKey = apiKey ?? slug;
+    const cacheKey = apiKey ?? accessToken ?? slug;
     const cached = planCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 60_000) return cached.plan;
     try {
       const resolved = await (await import("@copyr/core")).resolveSession(core.ctx, {
         apiKey,
+        accessToken,
         workspaceSlug: slug,
       });
       const ws = await core.session.getWorkspace(core.ctx, resolved.workspaceId);
@@ -81,7 +103,9 @@ export async function buildApp(opts: { core?: Core } = {}) {
     timeWindow: "1 minute",
     hook: "onRequest",
     keyGenerator: (req) =>
-      (req.headers["x-api-key"] as string | undefined) ?? req.ip,
+      (req.headers.authorization as string | undefined) ??
+      (req.headers["x-api-key"] as string | undefined) ??
+      req.ip,
   });
 
   // ── error mapping ─────────────────────────────────────────────────
@@ -121,6 +145,7 @@ export async function buildApp(opts: { core?: Core } = {}) {
     const slug = (req.headers["x-workspace-slug"] as string | undefined) ?? null;
     req.session = await resolveSession(core.ctx, {
       apiKey: typeof apiKey === "string" ? apiKey : null,
+      accessToken: bearerToken(req.headers.authorization),
       workspaceSlug: slug,
     });
   });

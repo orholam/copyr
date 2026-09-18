@@ -36,6 +36,7 @@ describe.skipIf(!reachable)("ObjectStore round-trip (live MinIO)", () => {
   const store = new ObjectStore();
 
   it("puts and gets bytes intact", async () => {
+    await store.ensureBucket();
     const body = Buffer.from(`copyr-test-${Date.now()}`);
     await store.put(`test/${body.toString()}.bin`, body, "application/octet-stream");
     await expect(store.get(`test/${body.toString()}.bin`)).resolves.toEqual(body);

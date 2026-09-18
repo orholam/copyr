@@ -17,6 +17,7 @@ interface Message {
   content: string;
   toolCalls?: ToolCall[] | null;
   toolName?: string | null;
+  toolArgs?: Record<string, unknown> | null;
   ok?: boolean | null;
   createdAt: string;
 }
@@ -54,6 +55,18 @@ function groupLabel(iso: string): string {
   if (t >= startOfToday - 7 * DAY) return "Previous 7 days";
   if (t >= startOfToday - 30 * DAY) return "Previous 30 days";
   return "Older";
+}
+
+function formatToolLabel(name: string, args?: Record<string, unknown> | null): string {
+  if (!args || !Object.keys(args).length) return `${name}()`;
+  const inner = Object.entries(args)
+    .slice(0, 4)
+    .map(([k, v]) => {
+      const shown = typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v);
+      return `${k}=${(shown ?? "null").slice(0, 48)}`;
+    })
+    .join(", ");
+  return `${name}(${inner})`;
 }
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"];
@@ -371,7 +384,7 @@ export default function Assistant() {
                         )}
                       >
                         {m.ok === false ? <IconX width={9} height={9} strokeWidth={3} /> : <IconCheck width={10} height={10} strokeWidth={3} />}
-                        {m.toolName ?? "tool"}()
+                        {formatToolLabel(m.toolName ?? "tool", m.toolArgs)}
                       </summary>
                       <pre className="mt-1 max-h-44 max-w-xl overflow-auto whitespace-pre-wrap rounded-lg border border-paper-900/[0.08] bg-paper-50 p-2.5 font-mono text-[10px] leading-relaxed text-paper-600">
                         {m.content}
@@ -401,7 +414,7 @@ export default function Assistant() {
                           <div className="flex flex-wrap gap-1">
                             {m.toolCalls.map((tc, i) => (
                               <span key={i} className="inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 font-mono text-[10px] text-brand-700">
-                                {tc.name}()
+                                {formatToolLabel(tc.name, tc.args)}
                               </span>
                             ))}
                           </div>

@@ -144,6 +144,8 @@ export interface ThesisScoreOutput {
 export interface AssistantToolSpec {
   name: string;
   description: string;
+  /** JSON Schema for arguments (from MCP `inputSchema`), when known. */
+  inputSchema?: Record<string, unknown>;
 }
 
 export interface AssistantTurnMessage {

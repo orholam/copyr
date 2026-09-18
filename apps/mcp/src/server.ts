@@ -298,7 +298,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "create_company",
-    "Create a company. Custom fields via `fields` keyed by field key.",
+    "Create a company. Required args: name. Optional: domain, sector, location, description, fields.",
     { ...createCompanySchema.shape },
     tool(async (args) => {
       const input = createCompanySchema.parse(args);
