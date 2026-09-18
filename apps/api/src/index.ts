@@ -3,6 +3,10 @@ import { buildApp } from "./app.js";
 
 async function main() {
   const config = loadConfig();
+  if (config.AUTO_MIGRATE) {
+    const { runMigrations } = await import("@copyr/db/migrate");
+    await runMigrations(config.DATABASE_URL);
+  }
   const app = await buildApp();
 
   // start background workers unless this instance is API-only

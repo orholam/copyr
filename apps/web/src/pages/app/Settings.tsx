@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../../lib/api";
+import { api, apiUrl } from "../../lib/api";
 import { Badge, Button, Field, PageHeader, SegmentedControl, Select, Spinner, inputCls, cx } from "../../components/ui";
 import AutomationsTab from "./settings-tabs/AutomationsTab";
 import WebhooksTab from "./settings-tabs/WebhooksTab";
@@ -226,7 +226,7 @@ export default function Settings() {
               </>
             }
             cta="View spec"
-            onCta={() => window.open("/api/v1/openapi.json", "_blank")}
+            onCta={() => window.open(apiUrl("/api/v1/openapi.json"), "_blank")}
           />
 
           <IntegrationCard

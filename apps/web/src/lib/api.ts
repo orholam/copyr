@@ -1,5 +1,13 @@
 /** Thin typed API client for the Copyr REST API. */
-const BASE = "/api/v1";
+
+/** Absolute API origin in split deploys (Vercel web + Render API). Empty = same origin. */
+export function apiUrl(path: string): string {
+  const origin = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${origin}${p}`;
+}
+
+const BASE = apiUrl("/api/v1");
 export const WORKSPACE_SLUG =
   (import.meta.env.VITE_WORKSPACE_SLUG as string | undefined) ?? "harbor-ventures";
 

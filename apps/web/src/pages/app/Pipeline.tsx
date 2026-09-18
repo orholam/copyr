@@ -19,7 +19,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { api } from "../../lib/api";
+import { api, apiUrl } from "../../lib/api";
 import {
   Avatar, Badge, Button, EmptyState, ErrorState, PageHeader, SegmentedControl, Skeleton, cx, money, timeAgo,
 } from "../../components/ui";
@@ -429,7 +429,7 @@ export default function Pipeline() {
                 </button>
               )}
               <a
-                href={`/api/v1/export/deals?format=csv`}
+                href={apiUrl("/api/v1/export/deals?format=csv")}
                 className="flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
                 title="Export all deals to CSV"
               >

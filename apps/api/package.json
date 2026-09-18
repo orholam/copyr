@@ -15,6 +15,7 @@
     "@copyr/config": "workspace:*",
     "@copyr/contracts": "workspace:*",
     "@copyr/core": "workspace:*",
+    "@copyr/db": "workspace:*",
     "@copyr/mcp": "workspace:*",
     "@fastify/cors": "^11.0.0",
     "@fastify/multipart": "^9.0.0",

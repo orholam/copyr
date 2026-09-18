@@ -10,8 +10,11 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { loadConfig } from "@copyr/config";
 
 /**
- * S3-compatible object storage. Points at MinIO locally, S3 in prod —
- * identical API, config-driven.
+ * S3-compatible object storage. Points at MinIO locally, Supabase Storage
+ * (S3 protocol) or AWS S3 in prod — identical API, config-driven.
+ *
+ * Supabase: STORAGE_ENDPOINT=https://<ref>.storage.supabase.co/storage/v1/s3
+ *           STORAGE_FORCE_PATH_STYLE=true
  */
 export class ObjectStore {
   private client: S3Client;

@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { Button, Spinner, inputCls } from "../components/ui";
+import { apiUrl } from "../lib/api";
 
 interface FormDef {
   name: string;
@@ -20,7 +21,7 @@ export default function PublicIntakeForm() {
   useEffect(() => {
     if (!slug || started.current) return;
     started.current = true;
-    fetch(`/api/v1/public/forms/${slug}`)
+    fetch(apiUrl(`/api/v1/public/forms/${slug}`))
       .then(async (res) => {
         if (!res.ok) throw new Error("Form not found");
         setForm(await res.json());
@@ -71,7 +72,7 @@ export default function PublicIntakeForm() {
                     const str = String(v).trim();
                     if (str) payload[k] = str;
                   });
-                  const res = await fetch(`/api/v1/public/forms/${slug}`, {
+                  const res = await fetch(apiUrl(`/api/v1/public/forms/${slug}`), {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify(payload),
@@ -146,7 +147,7 @@ export function ShareRedirect() {
 
   const load = (pw?: string) => {
     setLoading(true);
-    fetch(`/api/v1/public/share/${token}${pw ? `?password=${encodeURIComponent(pw)}` : ""}`)
+    fetch(apiUrl(`/api/v1/public/share/${token}${pw ? `?password=${encodeURIComponent(pw)}` : ""}`))
       .then(async (res) => {
         const body = await res.json();
         if (res.ok) {

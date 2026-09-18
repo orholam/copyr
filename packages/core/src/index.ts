@@ -1,5 +1,5 @@
 import { loadConfig } from "@copyr/config";
-import { createDb, type Database } from "@copyr/db";
+import { createDb, pgSsl, queryDatabaseUrl, type Database } from "@copyr/db";
 import { ObjectStore } from "@copyr/storage";
 import { getAiProvider } from "@copyr/ai";
 import PgBoss from "pg-boss";
@@ -71,14 +71,20 @@ export async function createCore(opts?: {
   runWorkers?: boolean;
 }): Promise<Core> {
   const config = loadConfig();
-  const db = createDb(opts?.dbUrl ?? config.DATABASE_URL);
+  const queryUrl = opts?.dbUrl ?? queryDatabaseUrl(config);
+  const bossUrl = opts?.dbUrl ?? config.DATABASE_URL;
+  const db = createDb(queryUrl);
   const storage = new ObjectStore();
   await storage.ensureBucket().catch(() => undefined);
   const ai = getAiProvider();
 
   let boss: PgBoss | undefined;
   if (opts?.runWorkers !== false) {
-    boss = new PgBoss({ connectionString: opts?.dbUrl ?? config.DATABASE_URL });
+    // pg-boss needs session/direct Postgres (LISTEN/NOTIFY) — never the transaction pooler.
+    boss = new PgBoss({
+      connectionString: bossUrl,
+      ssl: pgSsl(bossUrl, config.DATABASE_SSL),
+    });
     boss.on("error", (err) => console.error("[pg-boss]", err.message));
     await boss.start();
   }
