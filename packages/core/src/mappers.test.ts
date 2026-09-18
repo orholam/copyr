@@ -14,7 +14,6 @@ import {
   type ActivityRow,
   type CompanyRow,
   type CustomFieldRow,
-  type DealRow,
   type DocumentRow,
   type EmailRow,
   type NoteRow,
@@ -66,6 +65,17 @@ const companyRow = {
   tags: ["ai", "series-a"],
   status: "active",
   source: "manual",
+  pipelineId: "33333333-3333-3333-3333-333333333333",
+  stageId: "44444444-4444-4444-4444-444444444444",
+  ownerUserId: null,
+  roundStage: "Series A",
+  askAmount: "15000000.00",
+  valuation: null,
+  priority: 2,
+  position: "a0",
+  nextStepAt: LATER,
+  archivedAt: null,
+  sourceRef: "msg-1",
   createdAt: NOW,
   updatedAt: NOW,
 } as unknown as CompanyRow;
@@ -99,37 +109,18 @@ describe("mapCompany", () => {
 });
 
 describe("mapDeal", () => {
-  const dealRow = {
-    id: "22222222-2222-2222-2222-222222222222",
-    companyId: companyRow.id,
-    pipelineId: "33333333-3333-3333-3333-333333333333",
-    stageId: "44444444-4444-4444-4444-444444444444",
-    ownerUserId: null,
-    title: "Acme — Series A",
-    roundStage: "Series A",
-    askAmount: "15000000.00",
-    valuation: null,
-    priority: 2,
-    tags: ["hot"],
-    position: "a0",
-    nextStepAt: LATER,
-    archivedAt: null,
-    source: "email",
-    sourceRef: "msg-1",
-    createdAt: NOW,
-    updatedAt: NOW,
-  } as unknown as DealRow;
-
   it("converts numeric strings to numbers and keeps nulls", () => {
-    const dto = mapDeal(dealRow, companyRow);
+    const dto = mapDeal(companyRow);
     expect(dto.askAmount).toBe(15_000_000);
     expect(dto.valuation).toBeNull();
     expect(dto.nextStepAt).toBe("2026-08-02T12:00:00.000Z");
     expect(dto.archivedAt).toBeNull();
+    expect(dto.id).toBe(companyRow.id);
+    expect(dto.companyId).toBe(companyRow.id);
   });
 
   it("embeds the trimmed company summary card", () => {
-    const dto = mapDeal(dealRow, companyRow);
+    const dto = mapDeal(companyRow);
     expect(dto.company).toEqual({
       id: companyRow.id,
       name: "Acme Inc",
@@ -141,7 +132,7 @@ describe("mapDeal", () => {
       employeeCount: 24,
       foundedYear: 2020,
     });
-    // full company fields (e.g. tags) are not duplicated onto the deal
+    expect(dto.title).toBe("Acme Inc");
     expect((dto.company as { tags?: unknown }).tags).toBeUndefined();
   });
 });

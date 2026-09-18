@@ -1,10 +1,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { documents, companies, deals } from "@copyr/db/schema.js";
-import { asc } from "drizzle-orm";
+import { documents, companies } from "@copyr/db/schema.js";
 import type { DocumentDto } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapDocument } from "../mappers.js";
 import { logActivity } from "../activity.js";
+import { nextStagePosition } from "./companies.js";
+import { resolvePipelineStage } from "./pipelines.js";
 
 export async function listDocuments(
   ctx: CoreContext,
@@ -55,16 +56,7 @@ export async function uploadDocument(
 ): Promise<DocumentDto> {
   // attach to company's latest open deal when only company known
   const companyId = input.companyId ?? null;
-  let dealId = input.dealId ?? null;
-  if (!dealId && companyId) {
-    const [latest] = await ctx.db
-      .select({ id: deals.id })
-      .from(deals)
-      .where(and(eq(deals.companyId, companyId), eq(deals.workspaceId, session.workspaceId)))
-      .orderBy(asc(deals.archivedAt), desc(deals.createdAt))
-      .limit(1);
-    dealId = latest?.id ?? null;
-  }
+  const dealId = input.dealId ?? input.companyId ?? null;
 
   const key = `workspaces/${session.workspaceId}/documents/${crypto.randomUUID()}.pdf`;
   await ctx.storage.put(key, input.content, input.mime ?? "application/pdf");
@@ -141,6 +133,8 @@ export async function createDocumentFromLink(
       .limit(1);
     if (existing[0]) companyId = existing[0].id;
     else {
+      const { pipelineId, stage } = await resolvePipelineStage(ctx, ctx.db, session.workspaceId);
+      const position = await nextStagePosition(ctx.db, stage.id);
       const created = await ctx.db
         .insert(companies)
         .values({
@@ -148,6 +142,9 @@ export async function createDocumentFromLink(
           name: input.companyName,
           domain: new URL(input.url).hostname.replace(/^www\./, ""),
           source: "link",
+          pipelineId,
+          stageId: stage.id,
+          position,
         })
         .returning({ id: companies.id });
       companyId = created[0]!.id;
@@ -160,7 +157,7 @@ export async function createDocumentFromLink(
     .values({
       workspaceId: session.workspaceId,
       companyId,
-      dealId: input.dealId ?? null,
+      dealId: input.dealId ?? companyId,
       name: `${host} deck`,
       sourceUrl: input.url,
       source: "link_conversion",

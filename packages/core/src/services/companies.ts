@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { companies, contacts } from "@copyr/db/schema.js";
 import type {
   CompanyDto,
@@ -9,9 +9,22 @@ import type {
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapCompany } from "../mappers.js";
 import { logActivity } from "../activity.js";
+import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
+import { resolvePipelineStage } from "./pipelines.js";
 
 type Exec = Parameters<Parameters<CoreContext["db"]["transaction"]>[0]>[0];
+
+export async function nextStagePosition(
+  exec: CoreContext["db"] | Exec,
+  stageId: string,
+): Promise<string> {
+  const [{ maxPos }] = await exec
+    .select({ maxPos: sql<string | null>`max(${companies.position})` })
+    .from(companies)
+    .where(and(eq(companies.stageId, stageId), isNull(companies.archivedAt)));
+  return generateKeyBetween(maxPos, null);
+}
 
 export async function getCompanyRow(
   ctx: CoreContext,
@@ -137,6 +150,12 @@ export async function createCompany(
       return existing.id;
     }
 
+    const { pipelineId, stage } = await resolvePipelineStage(ctx, tx, session.workspaceId, {
+      pipelineId: input.pipelineId,
+      stageId: input.stageId,
+    });
+    const position = await nextStagePosition(tx, stage.id);
+
     const [row] = await tx
       .insert(companies)
       .values({
@@ -153,6 +172,17 @@ export async function createCompany(
         status: input.status ?? "active",
         source: session.actor.source === "api" ? "api" : "manual",
         createdByUserId: session.actor.userId,
+        pipelineId,
+        stageId: stage.id,
+        ownerUserId: input.ownerUserId ?? null,
+        roundStage: input.roundStage ?? null,
+        askAmount: input.askAmount != null ? String(input.askAmount) : null,
+        valuation: input.valuation != null ? String(input.valuation) : null,
+        priority: input.priority ?? 0,
+        position,
+        nextStepAt: input.nextStepAt ? new Date(input.nextStepAt) : null,
+        sourceRef: input.sourceRef ?? null,
+        tags: input.tags ?? [],
       })
       .returning();
 
@@ -172,6 +202,7 @@ export async function createCompany(
       entityType: "company",
       entityId: row.id,
       companyId: row.id,
+      dealId: row.id,
       type: "company.created",
       summary: `Company "${row.name}" created`,
       actor: session.actor.userId ? "user" : "system",
@@ -190,7 +221,14 @@ export async function updateCompany(
 ): Promise<CompanyDto> {
   return ctx.db.transaction(async (tx) => {
     await getCompanyRow(ctx, tx, session.workspaceId, companyId);
-    const { fields, mergeWithExisting: _ignored, ...rest } = patch;
+    const {
+      fields,
+      mergeWithExisting: _ignored,
+      askAmount,
+      valuation,
+      nextStepAt,
+      ...rest
+    } = patch;
     void _ignored;
     const [row] = await tx
       .update(companies)
@@ -200,6 +238,11 @@ export async function updateCompany(
           rest.domain !== undefined
             ? rest.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")
             : undefined,
+        ...(askAmount !== undefined ? { askAmount: askAmount === null ? null : String(askAmount) } : {}),
+        ...(valuation !== undefined ? { valuation: valuation === null ? null : String(valuation) } : {}),
+        ...(nextStepAt !== undefined
+          ? { nextStepAt: nextStepAt === null ? null : new Date(nextStepAt) }
+          : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(companies.id, companyId), eq(companies.workspaceId, session.workspaceId)))
@@ -315,12 +358,18 @@ export async function mergeCompany(
     const from = await getCompanyRow(ctx, tx, session.workspaceId, fromCompanyId);
     const into = await getCompanyRow(ctx, tx, session.workspaceId, intoCompanyId);
 
-    await tx.execute(sql`update deals set company_id = ${into.id} where company_id = ${from.id}`);
     for (const table of ["documents", "notes", "contacts", "portfolio_updates"] as const) {
       await tx.execute(sql.raw(
         `update ${table} set company_id = '${into.id}' where company_id = '${from.id}'`,
       ));
     }
+    for (const table of ["documents", "notes", "activities", "extractions", "vaults", "agent_runs", "spaces", "tasks"] as const) {
+      await tx.execute(sql.raw(
+        `update ${table} set deal_id = '${into.id}' where deal_id = '${from.id}'`,
+      ));
+    }
+    await tx.execute(sql`update research_reports set scope_company_id = ${into.id} where scope_company_id = ${from.id}`);
+    await tx.execute(sql`update research_reports set scope_deal_id = ${into.id} where scope_deal_id = ${from.id}`);
     await tx.execute(sql`update relationships set company_id = ${into.id} where company_id = ${from.id}`);
     // field values: copy missing, keep target's existing
     await tx.execute(sql`
@@ -331,11 +380,10 @@ export async function mergeCompany(
       on conflict (field_id, entity_type, entity_id) do nothing
     `);
     await tx.execute(sql`delete from field_values where entity_type = 'company' and entity_id = ${from.id}`);
-    await tx.execute(sql`delete from field_values where entity_type = 'deal' and entity_id in (select id from deals where company_id = ${from.id})`);
 
     await tx
       .update(companies)
-      .set({ status: "archived", mergedIntoCompanyId: into.id, updatedAt: new Date() })
+      .set({ status: "archived", mergedIntoCompanyId: into.id, archivedAt: new Date(), updatedAt: new Date() })
       .where(eq(companies.id, from.id));
 
     // fill gaps on the survivor from the merged record

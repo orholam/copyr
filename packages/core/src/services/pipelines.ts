@@ -53,6 +53,35 @@ export async function getStage(
   return row;
 }
 
+/** Default pipeline + first stage, or a caller-specified pair. */
+export async function resolvePipelineStage(
+  ctx: CoreContext,
+  exec: Parameters<Parameters<CoreContext["db"]["transaction"]>[0]>[0] | CoreContext["db"],
+  workspaceId: string,
+  input: { pipelineId?: string; stageId?: string } = {},
+) {
+  if (input.stageId) {
+    const stage = await getStage(ctx, exec, workspaceId, input.stageId);
+    return { pipelineId: stage.pipelineId, stage };
+  }
+  const pipeline = input.pipelineId
+    ? (
+        await exec
+          .select()
+          .from(pipelines)
+          .where(and(eq(pipelines.id, input.pipelineId), eq(pipelines.workspaceId, workspaceId)))
+      )[0]
+    : await getDefaultPipeline(ctx, exec, workspaceId);
+  if (!pipeline) throw new CoreError("pipeline not found", { status: 404 });
+  const [stage] = await exec
+    .select()
+    .from(stages)
+    .where(eq(stages.pipelineId, pipeline.id))
+    .orderBy(asc(stages.position));
+  if (!stage) throw new CoreError("no stages configured for pipeline", { status: 500 });
+  return { pipelineId: pipeline.id, stage };
+}
+
 export async function createStage(
   ctx: CoreContext,
   session: Session,
@@ -119,12 +148,12 @@ export async function deleteStage(
   session: Session,
   stageId: string,
 ): Promise<void> {
-  const dealsIn = await ctx.db.execute(
-    sql`select count(*)::int as count from deals where stage_id = ${stageId}`,
+  const companiesIn = await ctx.db.execute(
+    sql`select count(*)::int as count from companies where stage_id = ${stageId}`,
   );
-  const count = (dealsIn.rows[0] as unknown as { count: number }).count;
+  const count = (companiesIn.rows[0] as unknown as { count: number }).count;
   if (count > 0) {
-    throw new CoreError(`stage still holds ${count} deal(s); move them first`, {
+    throw new CoreError(`stage still holds ${count} compan${count === 1 ? "y" : "ies"}; move them first`, {
       code: "stage_not_empty",
       status: 409,
     });

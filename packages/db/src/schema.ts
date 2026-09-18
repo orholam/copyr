@@ -267,7 +267,11 @@ export const stages = pgTable(
   (t) => [index("stages_pipeline_idx").on(t.pipelineId, t.position)],
 );
 
-/* ─────────────────────── companies & deals ────────────────────────── */
+/* ─────────────────────── companies (pipeline cards) ───────────────── */
+/**
+ * A company IS the pipeline card. Round, stage, ask and kanban position live
+ * on this row — there is no separate deals table.
+ */
 
 export const companies = pgTable(
   "companies",
@@ -292,26 +296,6 @@ export const companies = pgTable(
       onDelete: "set null",
     }),
     mergedIntoCompanyId: uuid("merged_into_company_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    index("companies_ws_idx").on(t.workspaceId, t.status),
-    index("companies_ws_name_idx").on(t.workspaceId, t.name),
-    index("companies_ws_domain_idx").on(t.workspaceId, t.domain),
-  ],
-);
-
-export const deals = pgTable(
-  "deals",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
     pipelineId: uuid("pipeline_id")
       .notNull()
       .references(() => pipelines.id, { onDelete: "cascade" }),
@@ -321,28 +305,24 @@ export const deals = pgTable(
     ownerUserId: uuid("owner_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    title: text("title").notNull(),
     roundStage: text("round_stage"),
     askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
     valuation: numeric("valuation", { precision: 14, scale: 2 }),
     priority: integer("priority").notNull().default(0),
-    tags: jsonb("tags").$type<string[]>().notNull().default([]),
     /** fractional-index ordering within stage for kanban */
     position: text("position").notNull().default("a0"),
     nextStepAt: timestamp("next_step_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    source: entitySource("source").notNull().default("manual"),
     sourceRef: text("source_ref"),
-    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("deals_ws_pipeline_idx").on(t.workspaceId, t.pipelineId),
-    index("deals_stage_idx").on(t.stageId, t.position),
-    index("deals_company_idx").on(t.companyId),
+    index("companies_ws_idx").on(t.workspaceId, t.status),
+    index("companies_ws_name_idx").on(t.workspaceId, t.name),
+    index("companies_ws_domain_idx").on(t.workspaceId, t.domain),
+    index("companies_ws_pipeline_idx").on(t.workspaceId, t.pipelineId),
+    index("companies_stage_idx").on(t.stageId, t.position),
   ],
 );
 
@@ -469,7 +449,7 @@ export const documents = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     mime: text("mime").notNull().default("application/pdf"),
     sizeBytes: integer("size_bytes").notNull().default(0),
@@ -559,7 +539,7 @@ export const activities = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     type: text("type").notNull(), // e.g. deal.created, deal.stage_changed
     actor: activityActor("actor").notNull().default("system"),
     actorUserId: uuid("actor_user_id").references(() => users.id, {
@@ -590,7 +570,7 @@ export const notes = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
     pinned: boolean("pinned").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -622,7 +602,7 @@ export const extractions = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     model: text("model").notNull().default("mock"),
     result: jsonb("result")
       .$type<Record<string, unknown> | null>()
@@ -796,7 +776,7 @@ export const vaults = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "set null",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "set null" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "set null" }),
     status: vaultStatus("status").notNull().default("active"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
@@ -950,7 +930,7 @@ export const agentRuns = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "set null",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "set null" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "set null" }),
     spaceId: uuid("space_id"),
     taskId: uuid("task_id"),
     input: jsonb("input").$type<Record<string, unknown>>().default({}),
@@ -986,7 +966,7 @@ export const spaces = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     vaultId: uuid("vault_id").references(() => vaults.id, { onDelete: "set null" }),
     contextSnapshot: jsonb("context_snapshot")
       .$type<Record<string, unknown> | null>()
@@ -1036,7 +1016,7 @@ export const tasks = pgTable(
     companyId: uuid("company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    dealId: uuid("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+    dealId: uuid("deal_id").references(() => companies.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     detail: text("detail"),
     status: taskStatus("status").notNull().default("open"),
@@ -1113,7 +1093,7 @@ export const researchReports = pgTable(
     scopeCompanyId: uuid("scope_company_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
-    scopeDealId: uuid("scope_deal_id").references(() => deals.id, {
+    scopeDealId: uuid("scope_deal_id").references(() => companies.id, {
       onDelete: "cascade",
     }),
     scopeVaultId: uuid("scope_vault_id").references(() => vaults.id, {

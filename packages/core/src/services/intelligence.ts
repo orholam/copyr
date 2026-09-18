@@ -1,13 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
-import { companies, deals, documents } from "@copyr/db/schema.js";
+import { companies, documents } from "@copyr/db/schema.js";
 import type { DealDto } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
-import { getCompanyRow, findCompanyMatch } from "./companies.js";
+import { getCompanyRow, findCompanyMatch, nextStagePosition } from "./companies.js";
 import { getDefaultPipeline } from "./pipelines.js";
 import { stages as stagesT } from "@copyr/db/schema.js";
-import { generateKeyBetween } from "../fractional.js";
 
 /* ── AI investment thesis generation (ToS 2.1 parity) ─────────────── */
 
@@ -24,11 +23,6 @@ export async function generateThesis(
   companyId: string,
 ): Promise<ThesisMemo> {
   const company = await getCompanyRow(ctx, ctx.db, session.workspaceId, companyId);
-  const [deal] = await ctx.db
-    .select()
-    .from(deals)
-    .where(and(eq(deals.companyId, companyId), eq(deals.workspaceId, session.workspaceId)))
-    .limit(1);
   const docs = await ctx.db
     .select({ textContent: documents.textContent })
     .from(documents)
@@ -38,7 +32,7 @@ export async function generateThesis(
   const sourceText = [
     company.description ?? "",
     ...docs.map((d) => d.textContent ?? ""),
-    deal?.roundStage ? `Round: ${deal.roundStage}` : "",
+    company.roundStage ? `Round: ${company.roundStage}` : "",
   ]
     .filter(Boolean)
     .join("\n")
@@ -54,8 +48,8 @@ export async function generateThesis(
       sector: company.sector,
       description: company.description,
       location: company.location,
-      roundStage: deal?.roundStage ?? null,
-      askAmount: deal?.askAmount ? Number(deal.askAmount) : null,
+      roundStage: company.roundStage ?? null,
+      askAmount: company.askAmount ? Number(company.askAmount) : null,
       sourceText,
     });
     return result;
@@ -66,7 +60,7 @@ export async function generateThesis(
     entityType: "company",
     entityId: companyId,
     companyId,
-    dealId: deal?.id ?? null,
+    dealId: companyId,
     type: "thesis.generated",
     summary: `AI generated an investment memo for ${company.name}`,
     actor: "ai",
@@ -119,6 +113,14 @@ export async function capturePage(
     let company = await findCompanyMatch(ctx, tx, session.workspaceId, guessName, host);
     let created = false;
     if (!company) {
+      const pipeline = await getDefaultPipeline(ctx, tx, session.workspaceId);
+      const [intake] = await tx
+        .select()
+        .from(stagesT)
+        .where(eq(stagesT.pipelineId, pipeline.id))
+        .orderBy(stagesT.position)
+        .limit(1);
+      const position = await nextStagePosition(tx, intake!.id);
       const [row] = await tx
         .insert(companies)
         .values({
@@ -127,50 +129,18 @@ export async function capturePage(
           domain: host,
           description: input.title ? `${input.title} — captured from ${host}` : `Captured from ${host}`,
           source: "api",
+          pipelineId: pipeline.id,
+          stageId: intake!.id,
+          sourceRef: input.url,
+          createdByUserId: session.actor.userId,
+          position,
         })
         .returning();
       company = row!;
       created = true;
     }
 
-    let dealId: string | null = null;
-    if (input.createDeal !== false) {
-      const [existing] = await tx
-        .select({ id: deals.id })
-        .from(deals)
-        .where(and(eq(deals.companyId, company.id), eq(deals.workspaceId, session.workspaceId)))
-        .limit(1);
-      if (existing) {
-        dealId = existing.id;
-      } else {
-        const pipeline = await getDefaultPipeline(ctx, tx, session.workspaceId);
-        const [intake] = await tx
-          .select()
-          .from(stagesT)
-          .where(eq(stagesT.pipelineId, pipeline.id))
-          .orderBy(stagesT.position)
-          .limit(1);
-        const [{ maxPos }] = await tx
-          .select({ maxPos: sql<string | null>`max(${deals.position})` })
-          .from(deals)
-          .where(eq(deals.stageId, intake!.id));
-        const [deal] = await tx
-          .insert(deals)
-          .values({
-            workspaceId: session.workspaceId,
-            companyId: company.id,
-            pipelineId: pipeline.id,
-            stageId: intake!.id,
-            title: company.name,
-            source: "api",
-            sourceRef: input.url,
-            createdByUserId: session.actor.userId,
-            position: generateKeyBetween(maxPos, null),
-          })
-          .returning();
-        dealId = deal.id;
-      }
-    }
+    const dealId = input.createDeal === false ? null : company.id;
 
     await logActivity(ctx, tx, {
       workspaceId: session.workspaceId,

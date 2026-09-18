@@ -1,6 +1,6 @@
 import PgBoss from "pg-boss";
 import { eq } from "drizzle-orm";
-import { documents, deals, companies, customFields, extractions, fieldValues } from "@copyr/db/schema.js";
+import { documents, companies, customFields, extractions, fieldValues } from "@copyr/db/schema.js";
 import type { FieldSpec } from "@copyr/ai";
 import { and } from "drizzle-orm";
 import type { CoreContext } from "../context.js";
@@ -177,9 +177,7 @@ export async function runExtractionForDocument(
 
   const [company] = await ctx.db.select().from(companies).where(eq(companies.id, doc.companyId));
   if (!company) return;
-  const [deal] = doc.dealId
-    ? await ctx.db.select().from(deals).where(eq(deals.id, doc.dealId))
-    : [];
+  const deal = company;
 
   const [extraction] = await ctx.db
     .insert(extractions)
@@ -253,7 +251,7 @@ export async function runExtractionForDocument(
           dealPatch.askAmount = String(output.deal.askAmountUsd);
         }
         if (Object.keys(dealPatch).length) {
-          await tx.update(deals).set(dealPatch).where(eq(deals.id, deal.id));
+          await tx.update(companies).set(dealPatch).where(eq(companies.id, deal.id));
         }
       }
 

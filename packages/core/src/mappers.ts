@@ -1,6 +1,5 @@
 import type {
   companies,
-  deals,
   stages,
   pipelines,
   customFields,
@@ -28,7 +27,7 @@ import type {
 type Select<T extends { $inferSelect: any }> = T["$inferSelect"];
 
 export type CompanyRow = Select<typeof companies>;
-export type DealRow = Select<typeof deals>;
+export type DealRow = CompanyRow;
 export type StageRow = Select<typeof stages>;
 export type PipelineRow = Select<typeof pipelines>;
 export type CustomFieldRow = Select<typeof customFields>;
@@ -73,6 +72,17 @@ export function mapCompany(
     tags: row.tags ?? [],
     status: row.status,
     source: row.source,
+    pipelineId: row.pipelineId,
+    stageId: row.stageId,
+    ownerUserId: row.ownerUserId,
+    roundStage: row.roundStage,
+    askAmount: row.askAmount === null ? null : Number(row.askAmount),
+    valuation: row.valuation === null ? null : Number(row.valuation),
+    priority: row.priority,
+    position: row.position,
+    nextStepAt: toIso(row.nextStepAt),
+    archivedAt: toIso(row.archivedAt),
+    sourceRef: row.sourceRef,
     createdAt: toIso(row.createdAt)!,
     updatedAt: toIso(row.updatedAt)!,
     fields: out,
@@ -91,20 +101,22 @@ const dealCompanyPick = (c: CompanyRow) => ({
   foundedYear: c.foundedYear,
 });
 
+/** Pipeline-card view of a company. `id` === `companyId`. */
 export function mapDeal(
-  row: DealRow,
-  company: CompanyRow,
+  row: CompanyRow,
+  _company?: CompanyRow,
   fields: Record<string, unknown> = {},
 ): DealDto {
+  const company = _company ?? row;
   const out: Record<string, FieldValuePrimitive | null> = {};
   for (const [k, v] of Object.entries(fields)) out[k] = coerceFieldValue(v);
   return {
     id: row.id,
-    companyId: row.companyId,
+    companyId: row.id,
     pipelineId: row.pipelineId,
     stageId: row.stageId,
     ownerUserId: row.ownerUserId,
-    title: row.title,
+    title: row.name,
     roundStage: row.roundStage,
     askAmount: row.askAmount === null ? null : Number(row.askAmount),
     valuation: row.valuation === null ? null : Number(row.valuation),
