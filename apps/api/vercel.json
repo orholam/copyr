@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "cd ../.. && corepack enable && pnpm install --frozen-lockfile=false",
+  "buildCommand": "cd ../.. && pnpm --filter @copyr/web build && rm -rf apps/api/dist && cp -a apps/web/dist apps/api/dist",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

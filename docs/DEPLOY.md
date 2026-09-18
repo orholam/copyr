@@ -13,6 +13,9 @@
 2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
    - Empty → uses repo-root `vercel.json` (Vite output is copied to `./dist`).
    - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
+   - If the dashboard is already set to `apps/api` (GitHub integration default for this
+     project), `apps/api/vercel.json` still builds the **SPA** — it does not deploy Fastify.
+     Prefer changing Root Directory to empty or `apps/web`.
    Keep **Output Directory** as `dist` (or clear the dashboard override so `vercel.json` applies).
 3. Framework: Other / Vite (commands are in `vercel.json`).
 4. Vercel env (Production + Preview, **build** time):
@@ -190,7 +193,7 @@ Optional MCP HTTP: `Dockerfile.mcp` with `pnpm --filter @copyr/mcp dev` / `src/h
 
 ### Web (Vercel)
 
-**API is not on Vercel.** Root `vercel.json` (empty Root Directory) or `apps/web/vercel.json` (Root Directory `apps/web`) builds the SPA.
+**API is not on Vercel.** Root `vercel.json` (empty Root Directory), `apps/web/vercel.json` (Root Directory `apps/web`), or `apps/api/vercel.json` (if Root Directory is still `apps/api`) all build the SPA.
 
 1. Import `orholam/copyr` in Vercel.
 2. Root Directory: empty **or** `apps/web`.

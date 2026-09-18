@@ -22,6 +22,12 @@ jobs:
     env:
       DATABASE_URL: postgres://copyr:copyr@localhost:5433/copyr
       AI_PROVIDER: mock
+      STORAGE_ENDPOINT: http://127.0.0.1:9000
+      STORAGE_REGION: us-east-1
+      STORAGE_BUCKET: copyr-local
+      STORAGE_ACCESS_KEY_ID: copyr-dev
+      STORAGE_SECRET_ACCESS_KEY: copyr-dev-secret
+      STORAGE_FORCE_PATH_STYLE: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,6 +37,23 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=copyr-dev \
+            -e MINIO_ROOT_PASSWORD=copyr-dev-secret \
+            minio/minio:latest server /data
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              echo "MinIO is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MinIO failed to become ready"
+          docker logs minio
+          exit 1
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm typecheck
       - name: migrate + seed (schema for integration tests)
