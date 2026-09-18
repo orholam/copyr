@@ -47,11 +47,10 @@ export async function buildApp(opts: { core?: Core } = {}) {
       cb(null, isAllowedCorsOrigin(origin, config));
     },
     credentials: true,
-    // @fastify/cors snapshots allowed methods at register time. Without an
-    // explicit list it only advertises GET,HEAD,POST (Fastify defaults before
-    // routes load), so SPA preflights for PATCH/PUT/DELETE fail even when the
-    // Origin is allowed. Keep this list in sync with the HTTP verbs the API
-    // actually serves.
+    // @fastify/cors defaults to CORS-safelisted methods only (GET, HEAD, POST).
+    // Without an explicit list, SPA preflights for PATCH/PUT/DELETE fail even
+    // when the Origin is allowed. Keep this list in sync with the HTTP verbs
+    // the API actually serves.
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Accept",

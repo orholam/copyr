@@ -69,6 +69,7 @@ describe("api", () => {
       });
       expect(res.statusCode).toBe(204);
       expect(res.headers["access-control-allow-origin"]).toBe(origin);
+      expect(res.headers["access-control-allow-credentials"]).toBe("true");
       const allowMethods = String(res.headers["access-control-allow-methods"] ?? "").toUpperCase();
       expect(allowMethods).toContain("PATCH");
       expect(allowMethods).toContain("PUT");
@@ -78,7 +79,7 @@ describe("api", () => {
     it("omits Allow-Origin on CORS preflight from a disallowed origin", async () => {
       const res = await app.inject({
         method: "OPTIONS",
-        url: "/api/v1/deals/00000000-0000-0000-0000-000000000001",
+        url: "/health",
         headers: {
           origin: "https://evil.example",
           "access-control-request-method": "PATCH",
