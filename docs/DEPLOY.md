@@ -1,4 +1,4 @@
-# Copyr — deployment
+# VentureLabs — deployment
 
 > **The Fastify API must be a separate host. Do not put it on Vercel.**
 > Vercel serves only the Vite SPA (`apps/web`). The API needs a long-running
@@ -50,7 +50,7 @@ DATABASE_SSL=auto
 
 Direct URL (IPv6): `postgresql://postgres:[DB-PASSWORD]@db.cdsngnauduhiaidzncie.supabase.co:5432/postgres?sslmode=require` — prefer the pooler on Render.
 
-Then: `pnpm db:migrate` (renames a non-Copyr `public.deals` scaffold instead of dropping it) and optional `pnpm db:seed`.
+Then: `pnpm db:migrate` (renames a non-VentureLabs `public.deals` scaffold instead of dropping it) and optional `pnpm db:seed`.
 
 ### Storage (S3-compatible)
 
@@ -135,9 +135,9 @@ pnpm db:seed          # optional Harbor Ventures demo data
 `pnpm db:migrate` will:
 
 1. Connect with TLS when the host looks like Supabase.
-2. If `public.deals` exists **without** Copyr columns (`workspace_id`, `pipeline_id`, `stage_id`), rename it to `deals_scaffold` (or `deals_scaffold_N`) and rename colliding `deals_*` constraints/indexes. Rows are kept.
+2. If `public.deals` exists **without** VentureLabs columns (`workspace_id`, `pipeline_id`, `stage_id`), rename it to `deals_scaffold` (or `deals_scaffold_N`) and rename colliding `deals_*` constraints/indexes. Rows are kept.
 3. Apply Drizzle migrations from `packages/db/drizzle`.
-4. `ENABLE ROW LEVEL SECURITY` on public tables with no policies, so the Supabase anon key cannot read Copyr tables via PostgREST. The API uses the `postgres` role (`BYPASSRLS`).
+4. `ENABLE ROW LEVEL SECURITY` on public tables with no policies, so the Supabase anon key cannot read VentureLabs tables via PostgREST. The API uses the `postgres` role (`BYPASSRLS`).
 
 On Render, `AUTO_MIGRATE=true` (set in `render.yaml`) runs the same migrate on API boot.
 
@@ -305,6 +305,6 @@ Authentication → **Providers → Email**: leave **Confirm email** enabled (sig
 
 Do **not** enable Google (or any social provider). The SPA has no Google buttons.
 
-Row Level Security on `public` Copyr tables stays as-is (enabled, no anon policies). The API uses the `postgres` role via `DATABASE_URL`, not PostgREST.
+Row Level Security on `public` VentureLabs tables stays as-is (enabled, no anon policies). The API uses the `postgres` role via `DATABASE_URL`, not PostgREST.
 
 ---

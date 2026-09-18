@@ -53,15 +53,15 @@ function tool<A>(fn: (args: A) => Promise<unknown>) {
 }
 
 /**
- * The Copyr MCP server: every product capability, exposed to agents.
+ * The VentureLabs MCP server: every product capability, exposed to agents.
  * Tools read the tenant session from AsyncLocalStorage (see ./session.ts).
  */
 export function createCopyrMcpServer(core: Core): McpServer {
   const server = new McpServer(
-    { name: "copyr", version: "0.1.0" },
+    { name: "venturelabs", version: "0.1.0" },
     {
       instructions:
-        "Copyr is an AI-native operating platform for venture funds: deal flow, diligence, and portfolio operations.\n" +
+        "VentureLabs is an AI-native operating platform for venture funds: deal flow, diligence, and portfolio operations.\n" +
         "Surfaces: (1) PIPELINE — companies sit on pipeline stages (a company IS the deal card); ingest pitch emails, deck links, " +
         "PDFs or public intake forms (AI triage + extraction run automatically). (2) VAULTS — bulk diligence: create_vault, add documents, then " +
         "create_review_table extracts structured rows with citations across every parsed document in one query. " +
@@ -1362,7 +1362,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
           content: {
             type: "text",
             text:
-              "Triage the Copyr inbox:\n" +
+              "Triage the VentureLabs inbox:\n" +
               "1. list_emails(status=queued)\n" +
               "2. For each: get_email and review the AI result (companies matched/created).\n" +
               "3. If status=needs_review, inspect why (often credits exhausted or ambiguous sender) and reprocess after fixing.\n" +
@@ -1518,7 +1518,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
           content: {
             type: "text",
             text:
-              "Set up this Copyr workspace end-to-end:\n" +
+              "Set up this VentureLabs workspace end-to-end:\n" +
               "1. get_workspace_info and list_pipelines to see what exists already — never duplicate.\n" +
               "2. Ask the user about their fund thesis, check size and stage focus; remember the answers (remember, kind=focus_area/preference).\n" +
               "3. Shape the pipeline: create_stage/update_stage to match their process; list_custom_fields then create_custom_field for what they track (check size, lead partner, conviction…).\n" +

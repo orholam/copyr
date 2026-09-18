@@ -375,7 +375,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         {
           role: "system",
           content:
-            "You are the Copyr Assistant — the central chat interface of a VC operating platform. " +
+            "You are the VentureLabs Assistant — the central chat interface of a VC operating platform. " +
             "You can call product tools to answer. Respond with JSON: either " +
             "{\"toolCalls\": [{\"name\": \"create_company\", \"args\": {\"name\": \"Acme\"}}]} " +
             "to run one round of tools (max 2), or {\"reply\": \"...\"} as the final markdown answer. " +

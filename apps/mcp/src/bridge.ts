@@ -25,7 +25,7 @@ interface McpTextContent {
 
 export async function createAssistantMcpBridge(core: Core): Promise<AssistantToolHost> {
   const mcpServer = createCopyrMcpServer(core);
-  const client = new Client({ name: "copyr-assistant", version: "0.1.0" });
+  const client = new Client({ name: "venturelabs-assistant", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   await Promise.all([mcpServer.connect(serverTransport), client.connect(clientTransport)]);

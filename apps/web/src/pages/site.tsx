@@ -18,8 +18,8 @@ export function SitePage({
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">C</span>
-            <span className="font-serif font-semibold tracking-tight">Copyr</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">V</span>
+            <span className="font-serif font-semibold tracking-tight">VentureLabs</span>
           </Link>
           <div className="flex items-center gap-3">
             <ThemeToggle dark={dark} onToggle={toggle} />
@@ -122,14 +122,14 @@ export function PrivacyPolicy() {
       title="Privacy Policy"
       subtitle="How we collect, use, and protect your information"
       sections={[
-        ["Our commitment to your privacy", <p key="c">Your privacy and data confidentiality are our highest priorities. Copyr will never sell, share, rent, or disclose your personal information, deal flow data, portfolio information, investment theses, or confidential business information to any external party without your explicit written consent.</p>],
+        ["Our commitment to your privacy", <p key="c">Your privacy and data confidentiality are our highest priorities. VentureLabs will never sell, share, rent, or disclose your personal information, deal flow data, portfolio information, investment theses, or confidential business information to any external party without your explicit written consent.</p>],
         ["Information we collect", <ul key="l" className="list-disc space-y-1 pl-5"><li>Account details you provide (name, email, firm).</li><li>User content: companies, deals, documents, notes and custom fields you create.</li><li>Inbound emails you forward, including attachments.</li><li>Usage data (access logs, feature usage) kept for security and product improvement — never sold.</li></ul>],
         ["AI processing", <p key="a">Deal content is processed by AI solely to provide the features you request (triage, extraction, memos). Your content is not used to train foundation models, and processed data stays scoped to your workspace.</p>],
         ["Sharing", <p key="s">We share data only with sub-processors required to run the service (cloud hosting, transactional email), under confidentiality obligations, and only as necessary to provide the service or when required by law. We will attempt to notify you before disclosing data in response to legal requests unless prohibited.</p>],
         ["Security", <ul key="sec" className="list-disc space-y-1 pl-5"><li>TLS in transit; encryption at rest.</li><li>Workspace-level data isolation with row-scoped queries.</li><li>Private object storage behind short-lived signed URLs.</li><li>API key authentication with per-request tenant resolution.</li></ul>],
         ["Retention & deletion", <p key="r">Your data is retained while your workspace is active. On deletion request, content is removed within 90 days; backups purge within an additional 30 days. You can export everything (CSV/JSON) at any time from Settings → Export.</p>],
-        ["Your rights", <p key="y">Access, correction, deletion, portability and objection rights are honored for all users regardless of jurisdiction. Contact privacy@copyr.dev; we respond within 30 days.</p>],
-        ["Contact", <p key="ct">Copyr — privacy@copyr.dev · security@copyr.dev · support@copyr.dev</p>],
+        ["Your rights", <p key="y">Access, correction, deletion, portability and objection rights are honored for all users regardless of jurisdiction. Contact privacy@venturelabs.vercel.app; we respond within 30 days.</p>],
+        ["Contact", <p key="ct">VentureLabs — privacy@venturelabs.vercel.app · security@venturelabs.vercel.app · support@venturelabs.vercel.app</p>],
       ]}
     />
   );
@@ -139,7 +139,7 @@ export function TermsOfService() {
   return (
     <LegalShell
       title="Terms of Service"
-      subtitle="Terms and conditions for using Copyr"
+      subtitle="Terms and conditions for using VentureLabs"
       sections={[
         ["Important notice about your data", <p key="d"><b>Your data belongs to you and only you.</b> We will never share, sell, rent or disclose your deal flow data or confidential business information without explicit consent. Your trust is our foundation.</p>],
         ["Description of services", <ul key="ds" className="list-disc space-y-1 pl-5"><li>Deal flow CRM: pipeline management, custom fields/stages, tags, notes, activity logs.</li><li>AI-powered analysis: extraction, triage, investment memo generation.</li><li>Document processing: link conversion, uploads, permanent storage.</li><li>Email ingestion via forwarding/webhooks.</li><li>Capture endpoint for browser extensions.</li><li>REST API + MCP server for programmatic and agent access.</li><li>Integrations: Zapier/Tally-compatible webhooks.</li></ul>],
@@ -148,7 +148,7 @@ export function TermsOfService() {
         ["AI-generated content disclaimer", <p key="ag">AI output may contain errors or bias. It is informational only, is not investment advice, and should be independently verified before any decision.</p>],
         ["Billing & refunds", <p key="b">Subscriptions bill monthly or annually in advance. Full refund available within 14 days of initial subscription; afterwards fees are final except where required by law.</p>],
         ["Termination", <p key="t">You may terminate anytime; access continues until end of the billing period. Upon termination your content is deleted within 90 days subject to legal retention.</p>],
-        ["Governing law & contact", <p key="g">These terms are governed by the laws of Delaware, USA. Questions: legal@copyr.dev · support@copyr.dev</p>],
+        ["Governing law & contact", <p key="g">These terms are governed by the laws of Delaware, USA. Questions: legal@venturelabs.vercel.app · support@venturelabs.vercel.app</p>],
       ]}
     />
   );
@@ -170,10 +170,10 @@ export function CookiePolicy() {
 
 export function About() {
   return (
-    <SitePage title="About Copyr" subtitle="The deal flow machine that runs itself">
+    <SitePage title="About VentureLabs" subtitle="The deal flow machine that runs itself">
       <div className="space-y-4 text-[15px] leading-relaxed text-slate-700 dark:text-slate-300">
         <p>
-          Copyr started from a simple observation: venture firms don't lack deal flow — they lack a
+          VentureLabs started from a simple observation: venture firms don't lack deal flow — they lack a
           system that absorbs it. Decks arrive by email, die in inboxes, and someone pays for it in
           hours of copy-paste.
         </p>
@@ -183,7 +183,7 @@ export function About() {
           on judgment instead of data entry.
         </p>
         <p className="text-slate-500 dark:text-slate-400">
-          Contact: support@copyr.dev
+          Contact: support@venturelabs.vercel.app
         </p>
       </div>
     </SitePage>

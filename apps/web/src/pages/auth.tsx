@@ -25,8 +25,8 @@ export function AuthLayout({
       <header className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">C</span>
-            <span className="font-serif font-semibold tracking-tight text-slate-900 dark:text-white">Copyr</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">V</span>
+            <span className="font-serif font-semibold tracking-tight text-slate-900 dark:text-white">VentureLabs</span>
           </Link>
           <ThemeToggle dark={dark} onToggle={toggle} />
         </div>

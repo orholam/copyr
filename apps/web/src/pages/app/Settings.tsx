@@ -239,14 +239,14 @@ export default function Settings() {
               </>
             }
             cta="Copy address"
-            onCta={() => navigator.clipboard.writeText(`deals@${inboundSlug}.inbound.copyr.dev`)}
+            onCta={() => navigator.clipboard.writeText(`deals@${inboundSlug}.inbound.venturelabs.vercel.app`)}
           />
           <IntegrationCard
             name="Gmail"
             desc={
               <>
                 Read-only sync (<code className="rounded bg-paper-200/70 px-1 font-mono text-[10px]">gmail.readonly</code>) displaying deal-flow
-                email in real-time without storing content. Copyr adheres to Google's API Services User Data Policy,
+                email in real-time without storing content. VentureLabs adheres to Google's API Services User Data Policy,
                 including the Limited Use requirements.
               </>
             }
