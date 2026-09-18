@@ -1,5 +1,9 @@
 node_modules/
-dist/
+# Per-package Vite/tsc output. Do not ignore repo-root ./dist — Vercel’s
+# static collector treats a gitignored Output Directory as empty and fails
+# with "No Output Directory named dist" even after the SPA is mirrored there.
+apps/*/dist/
+packages/*/dist/
 build/
 .turbo/
 *.tsbuildinfo

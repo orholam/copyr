@@ -19,8 +19,8 @@ mode. Two configs used to fight the Vite dashboard default (`outputDirectory: di
    - `buildCommand`: `pnpm --filter @copyr/web build`
    - `outputDirectory`: `dist` (Vite writes `apps/web/dist`, then the web build
      mirrors it to repo-root `dist` so the Vite preset’s default still works)
-3. Framework: **Other** (commands live in `vercel.json`). A leftover **Vite**
-   preset is OK in this mode because `dist/` exists at the repo root after build.
+3. Framework: **Vite** (`vercel.json`). Repo-root `./dist` is **not** gitignored;
+   a gitignored Output Directory looks empty to Vercel even after the mirror step.
 4. If the import wizard filled Root Directory `apps/web`, **clear it** and redeploy.
 5. Vercel env (Production + Preview, **build** time):
 

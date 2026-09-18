@@ -22,6 +22,10 @@ try {
   rmSync(repoDist, { recursive: true, force: true });
   cpSync(webDist, repoDist, { recursive: true });
   console.log(`copyr: mirrored ${webDist} -> ${repoDist}`);
+  if (!existsSync(resolve(repoDist, "index.html"))) {
+    console.error(`copyr: mirror did not produce ${repoDist}/index.html`);
+    process.exit(1);
+  }
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
   // Root Directory = apps/web may forbid writing outside the app folder.
