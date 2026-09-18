@@ -13,8 +13,9 @@ where Vercel clones from. API = Render / Fly / Railway (`Dockerfile.api`).
 2. Connect the Origin team that owns `copyr`. Origin repos are private; Vercel
    requires a **paid team** (not Hobby).
 3. Import `{owner}/copyr`.
-4. Root Directory: **empty** (uses repo-root `vercel.json`) **or** `apps/web`
-   (uses `apps/web/vercel.json`).
+4. Root Directory: **empty** (recommended). Uses repo-root `vercel.json`
+   (`outputDirectory: dist`). Do not set Root Directory to `apps/web` on a
+   fresh import. See [`docs/DEPLOY.md`](DEPLOY.md).
 5. Build env:
    ```bash
    VITE_API_URL=https://<api-host>

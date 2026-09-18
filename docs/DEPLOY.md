@@ -8,13 +8,21 @@
 
 ## Ship now (Vercel SPA)
 
-1. Import this repo in Vercel via **Continue with Origin** (VenLabs does not
-   import GitHub). Until an Origin copy exists, see [`docs/ORIGIN.md`](ORIGIN.md).
-2. **Root Directory:** leave empty (repo root) **or** set `apps/web`.
-   - Empty → uses repo-root `vercel.json` (`outputDirectory: apps/web/dist`).
-   - `apps/web` → uses `apps/web/vercel.json` (install/build still run from the monorepo root).
-3. Framework: Other / Vite (commands are in `vercel.json`).
-4. Vercel env (Production + Preview, **build** time):
+**Recommended mode (Hobby GitHub import):** Root Directory **empty** + repo-root
+`vercel.json`. Do not set Root Directory to `apps/web` unless you cannot use that
+mode. Two configs used to fight the Vite dashboard default (`outputDirectory: dist`).
+
+1. Import **https://github.com/orholam/copyr** on Vercel (Hobby is fine for GitHub).
+   VenLabs Origin-only accounts: [`docs/ORIGIN.md`](ORIGIN.md).
+2. **Root Directory: leave empty** (repo root). Uses root `vercel.json`:
+   - `installCommand`: `corepack enable && pnpm install --frozen-lockfile=false`
+   - `buildCommand`: `pnpm --filter @copyr/web build`
+   - `outputDirectory`: `dist` (Vite writes `apps/web/dist`, then the web build
+     mirrors it to repo-root `dist` so the Vite preset’s default still works)
+3. Framework: **Other** (commands live in `vercel.json`). A leftover **Vite**
+   preset is OK in this mode because `dist/` exists at the repo root after build.
+4. If the import wizard filled Root Directory `apps/web`, **clear it** and redeploy.
+5. Vercel env (Production + Preview, **build** time):
 
 ```bash
 VITE_API_URL=https://<your-api-host>
@@ -181,10 +189,21 @@ Optional MCP HTTP: `Dockerfile.mcp` with `pnpm --filter @copyr/mcp dev` / `src/h
 
 ### Web (Vercel)
 
-**API is not on Vercel.** Root `vercel.json` (empty Root Directory) or `apps/web/vercel.json` (Root Directory `apps/web`) builds the SPA.
+**API is not on Vercel.** Use **one** mode:
+
+| Mode | Root Directory | Config | Output Vercel looks for |
+|---|---|---|---|
+| **Recommended** | *empty* (repo root) | `vercel.json` | `dist` (mirrored from `apps/web/dist`) |
+| Fallback | `apps/web` | `apps/web/vercel.json` | `dist` (Vite `outDir`, relative to `apps/web`) |
+
+The fallback is only for an import that already locked Root Directory to
+`apps/web`. It installs/builds with `pnpm --dir ../..` (no `cd`, so the shell
+cwd stays `apps/web`). `@copyr/web` needs workspace packages under `packages/`,
+so Vercel must include files outside the Root Directory (default on current
+projects). Prefer clearing Root Directory instead.
 
 1. Import `orholam/copyr` in Vercel.
-2. Root Directory: empty **or** `apps/web`.
+2. Root Directory: **empty**.
 3. Build-time env: `VITE_API_URL`, `VITE_WORKSPACE_SLUG` (see Ship now above).
 
 After the first Vercel URL exists, set `WEB_URL` on the API to that origin.

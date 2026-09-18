@@ -3,7 +3,7 @@
   "framework": null,
   "installCommand": "corepack enable && pnpm install --frozen-lockfile=false",
   "buildCommand": "pnpm --filter @copyr/web build",
-  "outputDirectory": "apps/web/dist",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

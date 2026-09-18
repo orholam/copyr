@@ -116,7 +116,7 @@ Production (venlabs-demo): point `DATABASE_URL` at the Supabase **session** pool
 `STORAGE_ENDPOINT` at the Storage S3 API. See [`.env.example`](.env.example) (commented
 block) and [`docs/DEPLOY.md`](docs/DEPLOY.md). Never commit secrets.
 
-Shareable demo: Vite SPA on **Vercel** (`vercel.json` + `apps/web/vercel.json`) + Fastify API on **Render/Fly/Railway**
+Shareable demo: Vite SPA on **Vercel** (Root Directory empty + root `vercel.json`) + Fastify API on **Render/Fly/Railway**
 (`render.yaml`, `Dockerfile.api`).
 
 **The API must be a separate host.** Fastify is not deployed as Vercel serverless
