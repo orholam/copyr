@@ -1,0 +1,56 @@
+# Copyr — production compose profile (local prod-parity)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://copyr:copyr@postgres:5432/copyr
+      STORAGE_ENDPOINT: http://minio:9000
+      PUBLIC_URL: http://localhost:8080
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET:-dev-inbound-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "4100:4100"
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.api # same image family; override command below
+    command: ["pnpm", "--filter", "@copyr/mcp", "exec", "tsx", "src/http.ts"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://copyr:copyr@postgres:5432/copyr
+      STORAGE_ENDPOINT: http://minio:9000
+      MCP_HTTP_PORT: 4200
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4200:4200"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # one-shot migrations before api starts (run manually):
+  # docker compose run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["pnpm", "--filter", "@copyr/db", "migrate"]
+    environment:
+      DATABASE_URL: postgres://copyr:copyr@postgres:5432/copyr
+    profiles: ["tools"]

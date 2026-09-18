@@ -1,0 +1,145 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: "class",
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        white: "rgb(var(--surface, 255 255 255) / <alpha-value>)",
+        brand: {
+          50: "rgb(var(--brand-50, 236 238 252) / <alpha-value>)",
+          100: "rgb(var(--brand-100, 223 227 248) / <alpha-value>)",
+          200: "rgb(var(--brand-200, 195 201 240) / <alpha-value>)",
+          300: "rgb(var(--brand-300, 163 171 230) / <alpha-value>)",
+          400: "#7c85db",
+          500: "#5e6ad2",
+          600: "#4f59bd",
+          700: "rgb(var(--brand-700, 67 74 163) / <alpha-value>)",
+          800: "rgb(var(--brand-800, 55 60 130) / <alpha-value>)",
+          900: "#2e3370",
+        },
+        violet: {
+          50: "rgb(var(--violet-50, 245 243 255) / <alpha-value>)",
+          300: "rgb(var(--violet-300, 216 180 254) / <alpha-value>)",
+          400: "#8b7ce6",
+          500: "#7563d9",
+          700: "rgb(var(--violet-700, 126 34 206) / <alpha-value>)",
+        },
+        emerald: {
+          50: "rgb(var(--emerald-50, 236 253 245) / <alpha-value>)",
+          200: "rgb(var(--emerald-200, 167 243 208) / <alpha-value>)",
+          300: "rgb(var(--emerald-300, 110 231 183) / <alpha-value>)",
+          500: "#10b981",
+          600: "#059669",
+          700: "rgb(var(--emerald-700, 4 120 87) / <alpha-value>)",
+          800: "rgb(var(--emerald-800, 6 95 70) / <alpha-value>)",
+        },
+        amber: {
+          50: "rgb(var(--amber-50, 255 251 235) / <alpha-value>)",
+          200: "rgb(var(--amber-200, 253 230 138) / <alpha-value>)",
+          300: "rgb(var(--amber-300, 252 211 77) / <alpha-value>)",
+          500: "#f59e0b",
+          600: "#d97706",
+          700: "rgb(var(--amber-700, 180 83 9) / <alpha-value>)",
+          800: "rgb(var(--amber-800, 146 64 14) / <alpha-value>)",
+        },
+        sky: {
+          50: "rgb(var(--sky-50, 240 249 255) / <alpha-value>)",
+          200: "rgb(var(--sky-200, 186 230 253) / <alpha-value>)",
+          300: "rgb(var(--sky-300, 125 211 252) / <alpha-value>)",
+          500: "#0ea5e9",
+          700: "rgb(var(--sky-700, 3 105 161) / <alpha-value>)",
+          800: "rgb(var(--sky-800, 7 89 133) / <alpha-value>)",
+        },
+        red: {
+          50: "rgb(var(--red-50, 254 242 242) / <alpha-value>)",
+          200: "rgb(var(--red-200, 254 202 202) / <alpha-value>)",
+          300: "rgb(var(--red-300, 252 165 165) / <alpha-value>)",
+          500: "#ef4444",
+          600: "#dc2626",
+          700: "rgb(var(--red-700, 185 28 28) / <alpha-value>)",
+        },
+        orange: {
+          600: "rgb(var(--orange-600, 234 88 12) / <alpha-value>)",
+        },
+        paper: {
+          50: "rgb(var(--paper-50, 251 250 247) / <alpha-value>)",
+          100: "rgb(var(--paper-100, 245 243 238) / <alpha-value>)",
+          200: "rgb(var(--paper-200, 236 234 222) / <alpha-value>)",
+          300: "rgb(var(--paper-300, 221 216 203) / <alpha-value>)",
+          400: "rgb(var(--paper-400, 184 178 164) / <alpha-value>)",
+          500: "rgb(var(--paper-500, 143 138 126) / <alpha-value>)",
+          600: "rgb(var(--paper-600, 110 106 95) / <alpha-value>)",
+          700: "rgb(var(--paper-700, 74 71 63) / <alpha-value>)",
+          800: "rgb(var(--paper-800, 48 45 40) / <alpha-value>)",
+          900: "rgb(var(--paper-900, 23 22 19) / <alpha-value>)",
+        },
+      },
+      fontFamily: {
+        sans: [
+          "Inter",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif",
+        ],
+        serif: ["Newsreader", "ui-serif", "Georgia", "Cambria", "Times New Roman", "Times", "serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+      },
+      fontSize: {
+        "2xs": ["11px", "16px"],
+      },
+      boxShadow: {
+        card: "0 1px 2px rgba(23,22,19,0.08)",
+        pop: "0 24px 48px -16px rgba(23,22,19,0.28), 0 0 0 1px rgba(23,22,19,0.06)",
+      },
+      keyframes: {
+        marquee: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
+        },
+        "fade-up": {
+          "0%": { opacity: "0", transform: "translateY(4px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "slide-in-right": {
+          "0%": { opacity: "0", transform: "translateX(32px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-400px 0" },
+          "100%": { backgroundPosition: "400px 0" },
+        },
+        pop: {
+          "0%": { opacity: "0", transform: "scale(.96) translateY(10px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+        shake: {
+          "0%, 100%": { transform: "translateX(0)" },
+          "20%": { transform: "translateX(-4px)" },
+          "40%": { transform: "translateX(4px)" },
+          "60%": { transform: "translateX(-2px)" },
+          "80%": { transform: "translateX(2px)" },
+        },
+        "slide-in-right": {
+          "0%": { opacity: "0", transform: "translateX(32px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
+      },
+      animation: {
+        marquee: "marquee 40s linear infinite",
+        "fade-up": "fade-up .25s cubic-bezier(.21,.61,.35,1) both",
+        "fade-in": "fade-in .15s ease both",
+        pop: "pop .22s cubic-bezier(.21,.61,.35,1) both",
+        shake: "shake .35s ease-in-out both",
+        "slide-in-right": "slide-in-right .28s cubic-bezier(.21,.61,.35,1) both",
+      },
+    },
+  },
+  plugins: [],
+};

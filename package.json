@@ -1,0 +1,38 @@
+{
+  "name": "copyr",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:up": "docker compose up -d postgres minio mailpit",
+    "db:migrate": "pnpm --filter @copyr/db migrate",
+    "db:seed": "pnpm --filter @copyr/db seed",
+    "smoke": "pnpm --filter @copyr/core smoke",
+    "e2e": "bash scripts/e2e-core.sh",
+    "e2e:b": "bash scripts/e2e-automation.sh",
+    "mcp:smoke": "node scripts/mcp-stdio-smoke.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.39.5",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp",
+      "unrs-resolver",
+      "workerd"
+    ]
+  }
+}

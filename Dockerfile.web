@@ -1,0 +1,18 @@
+# ── Copyr web (static SPA; serve via nginx or S3+CloudFront) ─────────
+FROM node:22-slim AS build
+RUN corepack enable
+WORKDIR /repo
+COPY pnpm-workspace.yaml package.json ./
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY apps/web/package.json apps/web/
+RUN pnpm install --frozen-lockfile=false
+COPY tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/web ./apps/web
+RUN pnpm --filter @copyr/web build
+
+FROM nginx:alpine AS runtime
+COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

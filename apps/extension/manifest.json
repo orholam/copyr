@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Copyr — capture to pipeline",
+  "version": "0.1.0",
+  "description": "Capture any webpage into your Copyr deal-flow pipeline in one click.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture to Copyr"
+  },
+  "permissions": ["storage", "activeTab", "tabs"],
+  "host_permissions": ["http://localhost:4100/*", "https://*/*"]
+}

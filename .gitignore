@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+.DS_Store
+data/
+
+# Separate GitHub repo: orholam/vc_intelligence
+intelligence/

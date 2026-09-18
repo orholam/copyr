@@ -1,0 +1,1 @@
+ALTER TYPE "public"."workflow_trigger_event" ADD VALUE 'agent_run.completed';

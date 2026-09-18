@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 320px;
+        margin: 0;
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        background: #4f46e5;
+        color: #fff;
+      }
+      header .logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: #fff;
+        color: #4f46e5;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 13px;
+      }
+      header b {
+        font-size: 14px;
+      }
+      main {
+        padding: 14px;
+      }
+      label {
+        display: block;
+        font-size: 11px;
+        font-weight: 600;
+        color: #64748b;
+        margin: 10px 0 4px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      }
+      button {
+        width: 100%;
+        margin-top: 12px;
+        padding: 10px;
+        border: 0;
+        border-radius: 10px;
+        background: #4f46e5;
+        color: #fff;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+        min-height: 18px;
+        text-align: center;
+      }
+      .ok {
+        color: #059669;
+      }
+      .err {
+        color: #dc2626;
+      }
+      .muted {
+        color: #94a3b8;
+        font-size: 11px;
+        text-align: center;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="logo">c</span>
+      <b>Copyr</b>
+    </header>
+    <main>
+      <div id="setup" hidden>
+        <label>API base URL</label>
+        <input id="apiBase" placeholder="http://localhost:4100" />
+        <label>API key</label>
+        <input id="apiKey" placeholder="ck_… (Settings → API keys)" />
+        <button id="save">Save</button>
+      </div>
+      <div id="capture" hidden>
+        <label>Page title</label>
+        <input id="title" />
+        <label>Note (optional)</label>
+        <textarea id="note" rows="2" placeholder="Why does this matter?"></textarea>
+        <button id="go">Capture to pipeline</button>
+        <p class="muted" id="url"></p>
+      </div>
+      <div id="status"></div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
