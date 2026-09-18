@@ -55,6 +55,38 @@ describe("api", () => {
       expect(res.statusCode).toBe(401);
       expect(res.json()).toMatchObject({ code: "unauthorized" });
     });
+
+    it("allows PATCH/PUT/DELETE on CORS preflight from an allowed SPA origin", async () => {
+      const origin = "http://localhost:5173";
+      const res = await app.inject({
+        method: "OPTIONS",
+        url: "/api/v1/deals/00000000-0000-0000-0000-000000000001",
+        headers: {
+          origin,
+          "access-control-request-method": "PATCH",
+          "access-control-request-headers": "content-type,authorization",
+        },
+      });
+      expect(res.statusCode).toBe(204);
+      expect(res.headers["access-control-allow-origin"]).toBe(origin);
+      expect(res.headers["access-control-allow-credentials"]).toBe("true");
+      const allowMethods = String(res.headers["access-control-allow-methods"] ?? "").toUpperCase();
+      expect(allowMethods).toContain("PATCH");
+      expect(allowMethods).toContain("PUT");
+      expect(allowMethods).toContain("DELETE");
+    });
+
+    it("omits Allow-Origin on CORS preflight from a disallowed origin", async () => {
+      const res = await app.inject({
+        method: "OPTIONS",
+        url: "/health",
+        headers: {
+          origin: "https://evil.example",
+          "access-control-request-method": "PATCH",
+        },
+      });
+      expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+    });
   });
 
   describe("authenticated routes", () => {
