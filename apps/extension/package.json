@@ -2,5 +2,5 @@
   "name": "@copyr/extension",
   "version": "0.1.0",
   "private": true,
-  "description": "Copyr browser extension — capture any webpage into the deal-flow pipeline"
+  "description": "VentureLabs browser extension — capture any webpage into the deal-flow pipeline"
 }

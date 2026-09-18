@@ -219,7 +219,7 @@ export async function deliverWebhook(ctx: CoreContext, deliveryId: string): Prom
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "user-agent": "Copyr-Webhooks/1.0",
+        "user-agent": "VentureLabs-Webhooks/1.0",
         "x-copyr-event": delivery.event,
         "x-copyr-delivery": delivery.id,
         "x-copyr-signature": signPayload(sub.secret, body),

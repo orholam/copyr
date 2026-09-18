@@ -254,7 +254,7 @@ export async function exportDeals(
     return {
       body: JSON.stringify({ exportedAt: new Date().toISOString(), count: items.length, deals: items }, null, 2),
       contentType: "application/json",
-      filename: `copyr-deals-${stamp}.json`,
+      filename: `venturelabs-deals-${stamp}.json`,
     };
   }
   const fieldKeys = [...new Set(items.flatMap((d: DealDto) => Object.keys(d.fields)))];
@@ -278,6 +278,6 @@ export async function exportDeals(
   return {
     body: lines.join("\n"),
     contentType: "text/csv",
-    filename: `copyr-deals-${stamp}.csv`,
+    filename: `venturelabs-deals-${stamp}.csv`,
   };
 }

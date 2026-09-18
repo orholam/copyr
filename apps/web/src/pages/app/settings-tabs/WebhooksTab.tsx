@@ -100,7 +100,7 @@ export default function WebhooksTab() {
         ))}
         {!subsQ.data?.length && (
           <div className="rounded-xl border border-dashed border-paper-400 py-12 text-center text-sm text-paper-500">
-            No webhook endpoints yet. Create one and Copyr will POST every matching event to it —
+            No webhook endpoints yet. Create one and VentureLabs will POST every matching event to it —
             signed with HMAC-SHA256 and retried automatically.
           </div>
         )}

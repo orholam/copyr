@@ -19,7 +19,7 @@ async function main() {
   await app.listen({ port: config.API_PORT, host: "0.0.0.0" });
   console.log(`
 ┌─────────────────────────────────────────────────────┐
-│  Copyr API                                          │
+│  VentureLabs API                                    │
 │  REST      http://localhost:${config.API_PORT}/api/v1          │
 │  SSE       http://localhost:${config.API_PORT}/api/v1/events   │
 │  Health    http://localhost:${config.API_PORT}/health          │

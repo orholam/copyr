@@ -109,7 +109,7 @@ export default function AppShell() {
       <aside className="z-10 flex h-full w-[220px] shrink-0 flex-col border-r border-paper-900/[0.08] bg-white">
         <div className="flex items-center gap-2.5 px-3 py-3.5">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">
-            C
+            V
           </span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-semibold leading-4 tracking-tight text-paper-900">
