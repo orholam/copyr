@@ -58,7 +58,7 @@ export async function commandCenter(
   const counts = (
     await ctx.db.execute(sql`
       select
-        (select count(*)::int from deals where workspace_id = ${ws} and archived_at is null) as deals,
+        (select count(*)::int from companies where workspace_id = ${ws} and archived_at is null) as deals,
         (select count(*)::int from companies where workspace_id = ${ws}) as companies,
         (select count(*)::int from documents where workspace_id = ${ws} and parse_status = 'parsed') as documents_parsed,
         (select count(*)::int from vaults where workspace_id = ${ws}) as vaults,
@@ -106,7 +106,7 @@ export async function commandCenter(
 
   // ── cross-workspace peer benchmarking (anonymized aggregates) ──────
   const dealCountsPerWs = (
-    await ctx.db.execute(sql`select workspace_id, count(*)::int as n from deals group by 1`)
+    await ctx.db.execute(sql`select workspace_id, count(*)::int as n from companies group by 1`)
   ).rows as Array<{ workspace_id: string; n: number }>;
   const docCountsPerWs = (
     await ctx.db.execute(sql`select workspace_id, count(*)::int as n from documents where parse_status = 'parsed' group by 1`)

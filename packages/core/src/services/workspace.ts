@@ -4,7 +4,6 @@ import {
   apiKeys,
   companies,
   creditLedger,
-  deals,
   documents,
   intakeForms,
   memberships,
@@ -15,11 +14,11 @@ import {
 } from "@copyr/db/schema.js";
 import type { Actor } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
-import { generateKeyBetween } from "../fractional.js";
 import { logActivity } from "../activity.js";
 import { toIso } from "../mappers.js";
 import { verifySupabaseJwt, type SupabaseJwtClaims } from "../supabase-jwt.js";
 import { ensureSystemAgents } from "./agents.js";
+import { nextStagePosition } from "./companies.js";
 
 /* ── session resolution ────────────────────────────────────────────── */
 
@@ -428,33 +427,6 @@ export async function submitIntakeForm(
   }
 
   return ctx.db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select()
-      .from(companies)
-      .where(
-        and(
-          eq(companies.workspaceId, form.workspaceId),
-          sql`lower(${companies.name}) = lower(${companyName})`,
-        ),
-      );
-    let companyId: string;
-    if (existing) {
-      companyId = existing.id;
-    } else {
-      const website = submission["website"];
-      const [company] = await tx
-        .insert(companies)
-        .values({
-          workspaceId: form.workspaceId,
-          name: companyName,
-          domain: website ? website.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null,
-          description: submission["one_liner"] ?? null,
-          source: "form",
-        })
-        .returning();
-      companyId = company.id;
-    }
-
     const stageRow = form.landingStageId
       ? (
           await tx.select().from(stages).where(eq(stages.id, form.landingStageId)).limit(1)
@@ -482,33 +454,53 @@ export async function submitIntakeForm(
       stageId = firstStage!.id;
     }
 
-    const [{ maxPos }] = await tx
-      .select({ maxPos: sql<string | null>`max(${deals.position})` })
-      .from(deals)
-      .where(eq(deals.stageId, stageId));
-
+    const [existing] = await tx
+      .select()
+      .from(companies)
+      .where(
+        and(
+          eq(companies.workspaceId, form.workspaceId),
+          sql`lower(${companies.name}) = lower(${companyName})`,
+        ),
+      );
     const round = submission["round"];
-    const [deal] = await tx
-      .insert(deals)
-      .values({
-        workspaceId: form.workspaceId,
-        companyId,
-        pipelineId: pipelineId!,
-        stageId,
-        title: `${companyName}${round ? ` — ${round}` : ""}`,
-        roundStage: round ?? null,
-        source: "form",
-        sourceRef: form.slug,
-        position: maxPos === null ? "a0" : generateKeyBetween(maxPos, null),
-      })
-      .returning();
+    let companyId: string;
+    if (existing) {
+      companyId = existing.id;
+      await tx
+        .update(companies)
+        .set({
+          ...(round ? { roundStage: round } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(companies.id, companyId));
+    } else {
+      const website = submission["website"];
+      const position = await nextStagePosition(tx, stageId);
+      const [company] = await tx
+        .insert(companies)
+        .values({
+          workspaceId: form.workspaceId,
+          name: companyName,
+          domain: website ? website.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : null,
+          description: submission["one_liner"] ?? null,
+          source: "form",
+          pipelineId: pipelineId!,
+          stageId,
+          roundStage: round ?? null,
+          sourceRef: form.slug,
+          position,
+        })
+        .returning();
+      companyId = company.id;
+    }
 
     await logActivity(ctx, tx, {
       workspaceId: form.workspaceId,
       entityType: "deal",
-      entityId: deal.id,
+      entityId: companyId,
       companyId,
-      dealId: deal.id,
+      dealId: companyId,
       type: "deal.created",
       summary: `Pitch submitted via intake form`,
       actor: "system",
@@ -521,7 +513,7 @@ export async function submitIntakeForm(
         .values({
           workspaceId: form.workspaceId,
           companyId,
-          dealId: deal.id,
+          dealId: companyId,
           name: `${companyName} — submitted deck`,
           sourceUrl: submission["deck_url"],
           source: "link_conversion",
@@ -531,7 +523,7 @@ export async function submitIntakeForm(
       await ctx.enqueue("convert-link", { workspaceId: form.workspaceId, documentId: doc.id });
     }
 
-    return { dealId: deal.id, companyId };
+    return { dealId: companyId, companyId };
   });
 }
 

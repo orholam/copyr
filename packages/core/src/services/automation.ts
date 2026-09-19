@@ -7,7 +7,6 @@ import {
   agents,
   agentRuns,
   companies as companiesT,
-  deals as dealsT,
 } from "@copyr/db/schema.js";
 import type { RealtimeEvent, WorkflowDto, WorkflowRunDto, CreateWorkflowInput } from "@copyr/contracts";
 import { createWorkflowSchema, TRIGGER_EVENTS } from "@copyr/contracts";
@@ -292,21 +291,7 @@ async function buildSnapshot(
           const [company] = await ctx.db.select().from(companiesT).where(eq(companiesT.id, run.companyId));
           if (company) snap["company"] = { ...company, id: company.id, name: company.name };
         }
-        const [dealScope] = run.companyId
-          ? await ctx.db
-              .select({ id: dealsT.id })
-              .from(dealsT)
-              .where(
-                and(
-                  eq(dealsT.companyId, run.companyId),
-                  eq(dealsT.workspaceId, workspaceId),
-                  sql`${dealsT.archivedAt} is null`,
-                ),
-              )
-              .orderBy(desc(dealsT.createdAt))
-              .limit(1)
-          : [];
-        const dealScopeId = run.dealId ?? dealScope?.id;
+        const dealScopeId = run.dealId ?? run.companyId;
         if (dealScopeId) {
           try {
             snap["deal"] = await dealsSvc.getDeal(ctx, { workspaceId, actor: { userId: null, source: "api" } }, dealScopeId);

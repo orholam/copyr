@@ -117,6 +117,17 @@ export const companyDto = z.object({
   tags: z.array(z.string()),
   status: companyStatusSchema,
   source: entitySourceSchema,
+  pipelineId: idSchema,
+  stageId: idSchema,
+  ownerUserId: idSchema.nullable(),
+  roundStage: z.string().nullable(),
+  askAmount: z.number().nullable(),
+  valuation: z.number().nullable(),
+  priority: z.number().int(),
+  position: z.string(),
+  nextStepAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+  sourceRef: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /** resolved custom field values keyed by field key */
@@ -138,6 +149,15 @@ export const createCompanySchema = z.object({
   status: companyStatusSchema.default("active"),
   /** when true and a name/domain match exists, update it instead of erroring */
   mergeWithExisting: z.boolean().optional(),
+  pipelineId: idSchema.optional(),
+  stageId: idSchema.optional(),
+  ownerUserId: idSchema.nullable().optional(),
+  roundStage: z.string().nullish(),
+  askAmount: z.number().nonnegative().nullable().optional(),
+  valuation: z.number().nonnegative().nullable().optional(),
+  priority: z.number().int().min(0).max(5).optional(),
+  nextStepAt: z.string().datetime({ offset: true }).nullish(),
+  sourceRef: z.string().optional(),
   fields: z.record(z.string(), fieldValuePrimitive).optional(),
 });
 export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
@@ -177,7 +197,7 @@ export const dealDto = z.object({
   sourceRef: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  /** embedded company summary */
+  /** embedded company summary — same record as `id` after the company/deal merge */
   company: companyDto.pick({
     id: true,
     name: true,
@@ -205,6 +225,8 @@ export const roundStageEnum = z.enum([
 export const createDealSchema = z.object({
   companyId: idSchema.optional(),
   companyName: z.string().min(1).optional(),
+  /** Alias of companyName — models often pass `name` like create_company. */
+  name: z.string().min(1).optional(),
   pipelineId: idSchema.optional(),
   stageId: idSchema.optional(),
   ownerUserId: idSchema.nullable().optional(),
@@ -218,7 +240,23 @@ export const createDealSchema = z.object({
   sourceRef: z.string().optional(),
   fields: z.record(z.string(), fieldValuePrimitive).optional(),
 });
-export type CreateDealInput = z.infer<typeof createDealSchema>;
+
+/** Parse create-deal input, mapping `name` → companyName and requiring an identity. */
+export const createDealInputSchema = createDealSchema
+  .superRefine((d, ctx) => {
+    if (!d.companyId && !(d.companyName ?? d.name ?? d.title)?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "companyId or companyName required",
+        path: ["companyName"],
+      });
+    }
+  })
+  .transform((d) => ({
+    ...d,
+    companyName: d.companyName ?? d.name ?? d.title,
+  }));
+export type CreateDealInput = z.infer<typeof createDealInputSchema>;
 
 export const updateDealSchema = z.object({
   stageId: idSchema.optional(),

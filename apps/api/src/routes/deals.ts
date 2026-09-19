@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
-  createDealSchema,
+  createDealInputSchema,
   updateDealSchema,
   listDealsQuerySchema,
   moveDealSchema,
@@ -19,7 +19,7 @@ const routes: FastifyPluginAsync = async (app) => {
   });
 
   app.post("/deals", async (req) => {
-    const input = createDealSchema.parse(req.body);
+    const input = createDealInputSchema.parse(req.body);
     return core().deals.createDeal(core().ctx, req.session!, input);
   });
 

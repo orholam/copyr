@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Core, Session } from "@copyr/core";
 import {
   createDealSchema,
+  createDealInputSchema,
   updateDealSchema,
   listDealsQuerySchema,
   createCompanySchema,
@@ -37,6 +38,12 @@ import { requireSession } from "./session.js";
 const uuid = z.string().uuid();
 const fieldValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]);
 
+function entityId(args: { dealId?: string; companyId?: string }): string {
+  const id = args.dealId ?? args.companyId;
+  if (!id) throw new Error("dealId or companyId required");
+  return id;
+}
+
 /** Wrap handlers so tool errors become readable tool results, never crashes. */
 function tool<A>(fn: (args: A) => Promise<unknown>) {
   return async (args: A): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> => {
@@ -62,7 +69,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
     {
       instructions:
         "VentureLabs is an AI-native operating platform for venture funds: deal flow, diligence, and portfolio operations.\n" +
-        "Surfaces: (1) PIPELINE — pipelines/stages/deals/companies/contacts with custom fields; ingest pitch emails, deck links, " +
+        "Surfaces: (1) PIPELINE — companies sit on pipeline stages (a company IS the deal card); ingest pitch emails, deck links, " +
         "PDFs or public intake forms (AI triage + extraction run automatically). (2) VAULTS — bulk diligence: create_vault, add documents, then " +
         "create_review_table extracts structured rows with citations across every parsed document in one query. " +
         "(3) KNOWLEDGE — ask_knowledge answers questions grounded in workspace material with citations. " +
@@ -71,6 +78,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
         "(6) MEMORY — remember/recall fund preferences that scope every answer. " +
         "(7) COMMAND CENTER — command_center_overview for adoption, benchmarking and recommendations.\n" +
         "Admin surfaces: API keys, intake forms, notification prefs, webhook subscriptions, share links — full create/update/delete lifecycle on every entity.\n" +
+        "Typical pipeline write: create_company({ name: \"Acme\" }) — that IS the deal card. create_deal is an alias (pass name or companyName). " +
         "Typical diligence flow: create_vault → add_documents_to_vault → poll until parsed → create_review_table → " +
         "get_review_table rows with quotes → ask_knowledge for synthesis → run_agent(thesis_screen) for the fit score.",
     },
@@ -156,7 +164,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "create_intake_form",
-    "Create a public intake form. Submissions create/dedupe a company and open a deal in the landing stage (default: first stage of the default pipeline).",
+    "Create a public intake form. Submissions create/dedupe a company and place it on the landing pipeline stage (default: first stage of the default pipeline).",
     {
       name: z.string().min(1),
       landingStageId: uuid.optional(),
@@ -235,42 +243,46 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "get_deal",
-    "Get one deal incl. embedded company summary and resolved custom field values",
-    { dealId: uuid },
-    tool(async ({ dealId }) => core.deals.getDeal(core.ctx, requireSession(), dealId)),
+    "Get one pipeline card (company). dealId and companyId are the same id after the merge.",
+    { dealId: uuid.optional(), companyId: uuid.optional() },
+    tool(async (args) =>
+      core.deals.getDeal(core.ctx, requireSession(), entityId(args)),
+    ),
   );
 
   server.tool(
     "create_deal",
-    "Create a deal. Pass companyId OR companyName (company auto-created/deduped). Custom fields via `fields` keyed by field key.",
+    "Alias of create_company. Required: companyName or name (or companyId). Puts the company on the pipeline.",
     { ...createDealSchema.shape },
     tool(async (args) => {
-      const input = createDealSchema.parse(args);
+      const input = createDealInputSchema.parse(args);
       return core.deals.createDeal(core.ctx, requireSession(), input);
     }),
   );
 
   server.tool(
     "update_deal",
-    "Update a deal: stageId, owner, title, roundStage, askAmount, priority, nextStepAt, archived, fields",
-    { ...updateDealSchema.shape, dealId: uuid },
+    "Update a pipeline card: stageId, owner, title, roundStage, askAmount, priority, nextStepAt, archived, fields. Pass dealId or companyId (same id).",
+    { ...updateDealSchema.shape, dealId: uuid.optional(), companyId: uuid.optional() },
     tool(async (args) => {
-      const { dealId, ...patch } = updateDealSchema.extend({ dealId: uuid }).parse(args);
-      if (!dealId) throw new Error("dealId required");
-      return core.deals.updateDeal(core.ctx, requireSession(), dealId, patch);
+      const { dealId: _d, companyId: _c, ...patch } = updateDealSchema
+        .extend({ dealId: uuid.optional(), companyId: uuid.optional() })
+        .parse(args);
+      return core.deals.updateDeal(core.ctx, requireSession(), entityId(args), patch);
     }),
   );
 
   server.tool(
     "move_deal",
-    "Move a deal to another stage and/or position it before a given deal (kanban semantics)",
+    "Move a pipeline card to another stage and/or position it before a given card (kanban semantics). Pass dealId or companyId.",
     {
-      dealId: uuid,
+      dealId: uuid.optional(),
+      companyId: uuid.optional(),
       stageId: uuid.optional(),
       beforeDealId: uuid.nullable().optional(),
     },
-    tool(async ({ dealId, stageId, beforeDealId }) =>
-      core.deals.moveDeal(core.ctx, requireSession(), dealId!, {
+    tool(async ({ dealId, companyId, stageId, beforeDealId }) =>
+      core.deals.moveDeal(core.ctx, requireSession(), entityId({ dealId, companyId }), {
         stageId: stageId ?? undefined,
         beforeDealId,
       }),
@@ -291,35 +303,39 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "get_company",
-    "Get a company incl. resolved custom field values",
-    { companyId: uuid },
-    tool(async ({ companyId }) => core.companies.getCompany(core.ctx, requireSession(), companyId)),
+    "Get a company (pipeline card) incl. resolved custom field values. Pass companyId or dealId — they are the same id.",
+    { companyId: uuid.optional(), dealId: uuid.optional() },
+    tool(async (args) => core.companies.getCompany(core.ctx, requireSession(), entityId(args))),
   );
 
   server.tool(
     "create_company",
-    "Create a company. Required args: name. Optional: domain, sector, location, description, fields.",
+    "Create a company and put it on the default pipeline (first stage). Required: name. Optional: domain, sector, roundStage, askAmount. This is the Pipeline board card — there is no separate deal record. Reuses an existing name/domain match.",
     { ...createCompanySchema.shape },
     tool(async (args) => {
-      const input = createCompanySchema.parse(args);
+      const input = createCompanySchema.parse({
+        ...args,
+        mergeWithExisting: args.mergeWithExisting ?? true,
+      });
       return core.companies.createCompany(core.ctx, requireSession(), input);
     }),
   );
 
   server.tool(
     "update_company",
-    "Update company attributes/status and custom field values",
-    { ...updateCompanySchema.shape, companyId: uuid },
+    "Update company attributes/status and custom field values. Pass companyId or dealId (same id).",
+    { ...updateCompanySchema.shape, companyId: uuid.optional(), dealId: uuid.optional() },
     tool(async (args) => {
-      const { companyId, ...patch } = updateCompanySchema.extend({ companyId: uuid }).parse(args);
-      if (!companyId) throw new Error("companyId required");
-      return core.companies.updateCompany(core.ctx, requireSession(), companyId, patch);
+      const { companyId: _c, dealId: _d, ...patch } = updateCompanySchema
+        .extend({ companyId: uuid.optional(), dealId: uuid.optional() })
+        .parse(args);
+      return core.companies.updateCompany(core.ctx, requireSession(), entityId(args), patch);
     }),
   );
 
   server.tool(
     "delete_company",
-    "Delete a company permanently (cascades its deals, documents and notes — prefer status=archived for soft removal)",
+    "Delete a company permanently (cascades documents and notes — prefer status=archived for soft removal)",
     { companyId: uuid },
     tool(async ({ companyId }) => {
       await core.companies.deleteCompany(core.ctx, requireSession(), companyId);
@@ -599,7 +615,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "capture_page",
-    "Capture a webpage into the CRM (what the browser extension calls): creates/links company from domain, opens a deal, preserves the page permanently",
+    "Capture a webpage into the CRM (what the browser extension calls): creates/links the company from the domain, places it on the pipeline, preserves the page permanently",
     {
       url: z.string().url(),
       title: z.string().optional(),
@@ -772,7 +788,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "search",
-    "Global search across companies and deals",
+    "Global search across companies (pipeline cards)",
     { ...globalSearchQuerySchema.shape },
     tool(async (args) => {
       const q = globalSearchQuerySchema.parse(args);

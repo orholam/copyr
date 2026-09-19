@@ -129,7 +129,10 @@ export async function setFieldValues(
     .select()
     .from(customFields)
     .where(eq(customFields.workspaceId, session.workspaceId));
-  const byKey = new Map(defs.filter((d) => d.target === entityType).map((d) => [d.key, d]));
+  const target = entityType === "deal" ? "company" : entityType;
+  const byKey = new Map(
+    defs.filter((d) => d.target === target || d.target === entityType).map((d) => [d.key, d]),
+  );
 
   for (const key of keys) {
     const def = byKey.get(key);
@@ -167,7 +170,7 @@ export async function setFieldValues(
       .values({
         workspaceId: session.workspaceId,
         fieldId: def.id,
-        entityType,
+        entityType: target,
         entityId,
         value: value as never,
         confidence: opts.confidence != null ? String(opts.confidence) : null,
@@ -206,7 +209,7 @@ export async function loadFieldMaps(
     .where(
       and(
         eq(fieldValues.workspaceId, workspaceId),
-        eq(fieldValues.entityType, entityType),
+        eq(fieldValues.entityType, entityType === "deal" ? "company" : entityType),
         inArray(fieldValues.entityId, entityIds),
       ),
     );

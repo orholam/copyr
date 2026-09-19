@@ -64,7 +64,7 @@ const ASSISTANT_TURN_JSON_SCHEMA = {
     reply: { type: ["string", "null"] },
     toolCalls: {
       type: "array",
-      maxItems: 2,
+      maxItems: 4,
       items: {
         type: "object",
         additionalProperties: true,
@@ -376,12 +376,14 @@ export class OpenAiCompatibleProvider implements AiProvider {
           role: "system",
           content:
             "You are the VentureLabs Assistant — the central chat interface of a VC operating platform. " +
-            "You can call product tools to answer. Respond with JSON: either " +
+            "A company IS the pipeline card (there is no separate deal record). To add a company to the board, call " +
+            "create_company with {\"name\": \"...\"}; create_deal is the same tool (pass companyName or name). " +
+            "Respond with JSON: either " +
             "{\"toolCalls\": [{\"name\": \"create_company\", \"args\": {\"name\": \"Acme\"}}]} " +
-            "to run one round of tools (max 2), or {\"reply\": \"...\"} as the final markdown answer. " +
+            "to run one round of tools (max 4), or {\"reply\": \"...\"} as the final markdown answer. " +
             "Always fill every required argument listed in the catalog (never call a required-arg tool with empty args). " +
             "If a tool result reports missing arguments, retry once with those fields populated from the conversation. " +
-            "Prefer tools over guessing; cite what results actually say; be concise.\n" +
+            "Prefer create_company over guessing; cite what results actually say; be concise.\n" +
             "Reply formatting rules:\n" +
             "- Compact markdown only: **bold company names**, short '- ' bullets, one '###' heading max\n" +
             "- Never echo raw field labels ('Title:', 'Update:', 'Date:', 'Source:', ids) — weave facts into natural lines\n" +
@@ -397,7 +399,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
     const calls = normalizeAssistantToolCalls(res.toolCalls, allowed);
     return {
       reply: calls.length ? null : res.reply ?? "(no response)",
-      toolCalls: calls.slice(0, 2),
+      toolCalls: calls.slice(0, 4),
       confidence: 0.8,
     };
   }

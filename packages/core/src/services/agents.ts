@@ -3,7 +3,6 @@ import {
   agentRuns,
   agents,
   companies,
-  deals,
   documents,
   notes,
   portfolioUpdates,
@@ -292,12 +291,7 @@ export async function gatherCompanyContext(
     throw new CoreError("company not found", { status: 404 });
   }
 
-  const [deal] = await ctx.db
-    .select()
-    .from(deals)
-    .where(eq(deals.companyId, companyId))
-    .orderBy(desc(deals.createdAt))
-    .limit(1);
+  const deal = company;
 
   const docs = await ctx.db
     .select({ name: documents.name, textContent: documents.textContent })

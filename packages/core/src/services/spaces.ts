@@ -2,7 +2,6 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   activities,
   companies,
-  deals,
   documents,
   notes,
   portfolioUpdates,
@@ -133,13 +132,7 @@ export async function getSpace(
     ? (await ctx.db.select().from(companies).where(eq(companies.id, space.companyId)))[0]
     : undefined;
 
-  const dealRows = space.companyId
-    ? await ctx.db
-        .select()
-        .from(deals)
-        .where(eq(deals.companyId, space.companyId))
-        .orderBy(desc(deals.createdAt))
-    : [];
+  const dealRows = companyRow ? [companyRow] : [];
 
   const docRows = space.companyId
     ? await ctx.db
@@ -224,7 +217,7 @@ export async function getSpace(
       : null,
     deals: dealRows.map((d) => ({
       id: d.id,
-      title: d.title,
+      title: d.name,
       roundStage: d.roundStage,
       askAmount: d.askAmount === null ? null : Number(d.askAmount),
       stageId: d.stageId,

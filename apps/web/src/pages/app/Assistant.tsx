@@ -34,7 +34,7 @@ interface TurnResult {
   messages: Message[];
 }
 
-type ToolRun = { name: string; status: "running" | "done"; ok?: boolean; ms?: number };
+type ToolRun = { name: string; args?: Record<string, unknown>; status: "running" | "done"; ok?: boolean; ms?: number };
 
 const SUGGESTIONS = [
   { title: "Pipeline pulse", prompt: "How is the pipeline looking?" },
@@ -181,7 +181,8 @@ export default function Assistant() {
         void api
           .stream("/assistant/messages/stream", { content: clean, conversationId: activeId }, (evt) => {
             if (evt.type === "tool_start") {
-              setTurn((t) => t && { ...t, tools: [...t.tools, { name: String(evt.name), status: "running" }] });
+              const args = evt.args && typeof evt.args === "object" ? (evt.args as Record<string, unknown>) : {};
+              setTurn((t) => t && { ...t, tools: [...t.tools, { name: String(evt.name), args, status: "running" }] });
             } else if (evt.type === "tool_end") {
               const ok = Boolean(evt.ok);
               const ms = Number(evt.ms);
@@ -525,7 +526,7 @@ function LiveTurn({ tools, reply }: { tools: ToolRun[]; reply: string }) {
                 ) : (
                   <IconX width={9} height={9} strokeWidth={3} />
                 )}
-                {t.name}()
+                {formatToolLabel(t.name, t.args)}
                 {typeof t.ms === "number" && <span className="num text-paper-400">{t.ms}ms</span>}
               </span>
             ))}

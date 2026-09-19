@@ -23,6 +23,21 @@ interface McpTextContent {
   text?: string;
 }
 
+const ASSISTANT_HIDDEN_TOOLS = new Set(["send_assistant_message"]);
+
+function assistantToolSchema(
+  name: string,
+  schema: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!schema) return schema;
+  if (name === "create_deal") {
+    const required = Array.isArray(schema.required) ? schema.required.map(String) : [];
+    if (!required.includes("companyName")) required.push("companyName");
+    return { ...schema, required };
+  }
+  return schema;
+}
+
 export async function createAssistantMcpBridge(core: Core): Promise<AssistantToolHost> {
   const mcpServer = createCopyrMcpServer(core);
   const client = new Client({ name: "venturelabs-assistant", version: "0.1.0" });
@@ -34,10 +49,14 @@ export async function createAssistantMcpBridge(core: Core): Promise<AssistantToo
     async listTools() {
       const res = await client.listTools();
       return res.tools
+        .filter((t) => !ASSISTANT_HIDDEN_TOOLS.has(t.name))
         .map((t) => ({
           name: t.name,
           description: t.description ?? "",
-          inputSchema: (t.inputSchema ?? undefined) as Record<string, unknown> | undefined,
+          inputSchema: assistantToolSchema(
+            t.name,
+            (t.inputSchema ?? undefined) as Record<string, unknown> | undefined,
+          ),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
     },

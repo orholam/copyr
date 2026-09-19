@@ -8,7 +8,7 @@
  */
 import { eq } from "drizzle-orm";
 import { loadConfig } from "@copyr/config";
-import { companies, deals, documents, emailMessages, fieldValues, workspaces } from "@copyr/db/schema.js";
+import { companies, documents, emailMessages, fieldValues, workspaces } from "@copyr/db/schema.js";
 import { createCore } from "./index.js";
 import { makePdf } from "./utils/pdf.js";
 import { ingestEmail } from "./services/emails.js";
@@ -89,8 +89,7 @@ async function main() {
   if (!nimbus) throw new Error(`company not created; have: ${allCompanies.map((c) => c.name).join(", ")}`);
   console.log(`company "${nimbus.name}" domain=${nimbus.domain} sector=${nimbus.sector}`);
 
-  const [deal] = await core.db.select().from(deals).where(eq(deals.companyId, nimbus.id));
-  console.log(`deal "${deal!.title}" round=${deal!.roundStage} ask=${deal!.askAmount}`);
+  console.log(`company "${nimbus.name}" domain=${nimbus.domain} sector=${nimbus.sector} round=${nimbus.roundStage} ask=${nimbus.askAmount}`);
 
   const values = await core.db.select().from(fieldValues).where(eq(fieldValues.entityId, nimbus.id));
   console.log(

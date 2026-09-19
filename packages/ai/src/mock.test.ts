@@ -62,3 +62,68 @@ describe("MockProvider.triageEmail", () => {
     expect(out.companies[0]!.domain).toBe("quantumleap.ai");
   });
 });
+
+const createCompanyTool = {
+  name: "create_company",
+  description: "Create a company and put it on the pipeline",
+  inputSchema: {
+    type: "object",
+    required: ["name"],
+    properties: { name: { type: "string" } },
+  },
+};
+
+const listDealsTool = {
+  name: "list_deals",
+  description: "List pipeline cards",
+  inputSchema: { type: "object", properties: { limit: { type: "number" } } },
+};
+
+describe("MockProvider.assistantTurn", () => {
+  const ai = new MockProvider();
+
+  it("adds a named company with create_company instead of listing the pipeline", async () => {
+    const turn = await ai.assistantTurn({
+      messages: [{ role: "user", content: "Add OpenAI to the pipeline" }],
+      tools: [createCompanyTool, listDealsTool],
+    });
+    expect(turn.toolCalls).toEqual([{ name: "create_company", args: { name: "OpenAI" } }]);
+  });
+
+  it("does not call create_company with empty args when the tool is mentioned", async () => {
+    const turn = await ai.assistantTurn({
+      messages: [{ role: "user", content: "Please run create_company for Anthropic" }],
+      tools: [createCompanyTool],
+    });
+    expect(turn.toolCalls).toEqual([{ name: "create_company", args: { name: "Anthropic" } }]);
+  });
+
+  it("synthesizes a reply from prefixed tool transcripts", async () => {
+    const turn = await ai.assistantTurn({
+      messages: [
+        { role: "user", content: "Add OpenAI to the pipeline" },
+        {
+          role: "tool",
+          content: `create_company({"name":"OpenAI"}) → ${JSON.stringify({
+            name: "OpenAI",
+            stageId: "stage-1",
+            pipelineId: "pipe-1",
+            status: "active",
+          })}`,
+        },
+      ],
+      tools: [createCompanyTool],
+    });
+    expect(turn.reply).toContain("OpenAI");
+    expect(turn.reply).toContain("pipeline");
+    expect(turn.toolCalls).toEqual([]);
+  });
+
+  it("still lists the pipeline for a status question", async () => {
+    const turn = await ai.assistantTurn({
+      messages: [{ role: "user", content: "How is the pipeline looking?" }],
+      tools: [createCompanyTool, listDealsTool],
+    });
+    expect(turn.toolCalls.map((c) => c.name)).toEqual(["list_deals"]);
+  });
+});
