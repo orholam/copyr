@@ -68,6 +68,11 @@ describe("loadConfig", () => {
     expect(cfg.CORS_ALLOW_VERCEL_PREVIEWS).toBe(false);
   });
 
+  it("defaults AUTO_MIGRATE off unless explicitly enabled", () => {
+    expect(loadConfig({ NODE_ENV: "test" }).AUTO_MIGRATE).toBe(false);
+    expect(loadConfig({ NODE_ENV: "production", AUTO_MIGRATE: "true" }).AUTO_MIGRATE).toBe(true);
+  });
+
   it("defaults ALLOW_DEV_WORKSPACE_AUTH off in production and on otherwise", () => {
     expect(loadConfig({ NODE_ENV: "production" }).ALLOW_DEV_WORKSPACE_AUTH).toBe(false);
     expect(loadConfig({ NODE_ENV: "test" }).ALLOW_DEV_WORKSPACE_AUTH).toBe(true);

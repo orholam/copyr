@@ -122,7 +122,12 @@ const schema = z.object({
   /** Allow `https://*.vercel.app` preview deployments to call the API. */
   CORS_ALLOW_VERCEL_PREVIEWS: envBoolean(false),
 
-  /** Run drizzle migrations on API boot (useful as a Render release/start hook). */
+  /**
+   * Run drizzle migrations on API boot.
+   * Render also runs `pnpm db:migrate` as `preDeployCommand` (see render.yaml).
+   * Default stays false so local/prod-like processes do not mutate a DB by accident.
+   * On Render, set this true (blueprint) and do not override it to false in the dashboard.
+   */
   AUTO_MIGRATE: envBoolean(false),
 });
 
