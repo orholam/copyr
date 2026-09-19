@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle, useTheme } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import { isAuthRequired, supabase, supabaseConfigured } from "../lib/supabase";
+import { checkDemoPasscode, hasDemoAccess, unlockDemo } from "../lib/demo-gate";
 
 /**
  * Email + password Auth against Supabase (venlabs-demo). Google / social
@@ -117,7 +118,7 @@ export function SignIn() {
   return (
     <AuthLayout
       title="Sign in to your account"
-      subtitle="Welcome back — email and password only"
+      subtitle="Welcome back — sign in to the demo workspace"
       footer={
         <>
           Do not have an account yet?{" "}
@@ -391,4 +392,76 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     return <Navigate to="/auth/sign-in" replace state={{ from: location.pathname }} />;
   }
   return <>{children}</>;
+}
+
+export function RequireDemoGate({ children }: { children: React.ReactNode }) {
+  const { loading, session } = useAuth();
+  const location = useLocation();
+
+  if (!loading && session) return <>{children}</>;
+  if (!hasDemoAccess()) {
+    return <Navigate to="/demo" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+export function DemoPasscode() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { session, loading } = useAuth();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [shake, setShake] = useState(false);
+
+  const next =
+    (location.state as { from?: string } | null)?.from &&
+    (location.state as { from?: string }).from !== "/demo"
+      ? (location.state as { from: string }).from
+      : "/auth/sign-in";
+
+  if (!loading && session) return <Navigate to="/app" replace />;
+  if (hasDemoAccess()) return <Navigate to={next} replace />;
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!checkDemoPasscode(code)) {
+      setError("That passcode doesn't match.");
+      setShake(true);
+      window.setTimeout(() => setShake(false), 400);
+      return;
+    }
+    unlockDemo();
+    navigate(next, { replace: true });
+  }
+
+  return (
+    <AuthLayout
+      title="This demo is private"
+      subtitle="VentureLabs isn’t public yet. Enter the passcode to try the seeded workspace."
+    >
+      <form className={`space-y-4 ${shake ? "animate-shake" : ""}`} onSubmit={onSubmit}>
+        <FieldError message={error} />
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-paper-700">Passcode</span>
+          <input
+            required
+            type="password"
+            autoComplete="off"
+            name="demo-passcode"
+            autoFocus
+            value={code}
+            onChange={(ev) => {
+              setCode(ev.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="Enter passcode"
+            className={input}
+          />
+        </label>
+        <button type="submit" className={primaryBtn}>
+          Continue
+        </button>
+      </form>
+    </AuthLayout>
+  );
 }

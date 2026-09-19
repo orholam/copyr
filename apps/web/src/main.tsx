@@ -17,7 +17,7 @@ import Settings from "./pages/app/Settings";
 import Diligence from "./pages/app/Diligence";
 import Automations from "./pages/app/Automations";
 import CommandCenter from "./pages/app/CommandCenter";
-import { SignIn, SignUp, PasswordReset, AuthCallback, RequireAuth } from "./pages/auth";
+import { SignIn, SignUp, PasswordReset, AuthCallback, RequireAuth, RequireDemoGate, DemoPasscode } from "./pages/auth";
 import PublicIntakeForm from "./pages/PublicIntakeForm";
 import { ShareRedirect } from "./pages/PublicIntakeForm";
 import {
@@ -50,8 +50,23 @@ const router = createBrowserRouter([
   { path: "/privacy-policy", element: <PrivacyPolicy /> },
   { path: "/terms-of-service", element: <TermsOfService /> },
   { path: "/cookie-policy", element: <CookiePolicy /> },
-  { path: "/auth/sign-in", element: <SignIn /> },
-  { path: "/auth/sign-up", element: <SignUp /> },
+  { path: "/demo", element: <DemoPasscode /> },
+  {
+    path: "/auth/sign-in",
+    element: (
+      <RequireDemoGate>
+        <SignIn />
+      </RequireDemoGate>
+    ),
+  },
+  {
+    path: "/auth/sign-up",
+    element: (
+      <RequireDemoGate>
+        <SignUp />
+      </RequireDemoGate>
+    ),
+  },
   { path: "/auth/reset", element: <PasswordReset /> },
   { path: "/auth/password-reset", element: <PasswordReset /> },
   { path: "/auth/callback", element: <AuthCallback /> },

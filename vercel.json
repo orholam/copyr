@@ -4,6 +4,7 @@
   "installCommand": "corepack enable && pnpm install --frozen-lockfile=false",
   "buildCommand": "bash scripts/vercel-build-web.sh",
   "outputDirectory": "dist",
+  "ignoreCommand": "exit 1",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
