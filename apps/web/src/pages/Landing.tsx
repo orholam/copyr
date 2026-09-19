@@ -78,8 +78,6 @@ function ArrowLink({ to = "#features", children }: { to?: string; children: Reac
 
 const btnDark =
   "inline-flex h-11 items-center justify-center rounded-lg bg-paper-900 px-6 text-sm font-medium text-paper-50 transition hover:bg-paper-800";
-const btnGhost =
-  "inline-flex h-11 items-center justify-center rounded-lg border border-paper-900/15 bg-white/60 px-6 text-sm font-medium text-paper-900 transition hover:border-paper-900/30 hover:bg-white";
 
 function Logo({ light = false }: { light?: boolean }) {
   return (
@@ -107,7 +105,6 @@ function Nav() {
     ["How it works", "#how"],
     ["Features", "#features"],
     ["Agents", "#agents"],
-    ["Pricing", "#pricing"],
     ["FAQ", "#faq"],
   ] as const;
   return (
@@ -132,10 +129,10 @@ function Nav() {
             Sign in
           </Link>
           <Link
-            to="/auth/sign-up"
+            to="/demo"
             className="inline-flex h-9 items-center rounded-lg bg-paper-900 px-4 text-sm font-medium text-paper-50 transition hover:bg-paper-800"
           >
-            Get started
+            Try the demo
           </Link>
           <button
             onClick={() => setOpen(!open)}
@@ -305,10 +302,9 @@ function Hero() {
             no manual data entry, no expired links.
           </p>
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/auth/sign-up" className={btnDark}>Start free trial</Link>
-            <Link to="/app" className={btnGhost}>Open live demo →</Link>
+            <Link to="/demo" className={btnDark}>Try the demo</Link>
           </div>
-          <p className="mt-4 text-xs text-paper-500">No credit card · 30-day trial · MCP server included</p>
+          <p className="mt-4 text-xs text-paper-500">Private demo · passcode required · seeded workspace</p>
         </Reveal>
         <Reveal delay={150} className="mt-14 md:mt-20">
           <HeroMock />
@@ -1052,113 +1048,13 @@ function Quotes() {
   );
 }
 
-/* ---------------------------------- pricing -------------------------------- */
-
-function Pricing() {
-  const plans = [
-    {
-      name: "Monthly",
-      price: "$50",
-      per: "per user / month",
-      features: [
-        "Unlimited deal ingestion",
-        "500 AI credits / user / month",
-        "Email forwarding & automation",
-        "Link conversion (DocSend, Pitch…)",
-        "Custom fields & stages",
-        "Team collaboration",
-      ],
-      cta: "Get started",
-      highlight: false,
-    },
-    {
-      name: "Yearly",
-      price: "$500",
-      per: "per user / year · save 16%",
-      features: [
-        "Everything in Monthly",
-        "Two months free",
-        "Priority support access",
-        "Early access to new features",
-        "Onboarding session",
-      ],
-      cta: "Get started",
-      highlight: true,
-    },
-    {
-      name: "Custom",
-      price: "Talk to us",
-      per: "firms of 15+ users",
-      features: ["Bulk discounts", "SSO & audit hooks", "Custom onboarding", "Dedicated support"],
-      cta: "Contact sales",
-      highlight: false,
-    },
-  ];
-  return (
-    <section id="pricing" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6 md:py-28">
-      <Reveal className="text-center">
-        <Eyebrow>Pricing</Eyebrow>
-        <h2 className="mx-auto mt-3 max-w-xl font-serif text-4xl leading-[1.08] tracking-tight text-paper-900 md:text-5xl">
-          Simple, flexible plans
-        </h2>
-        <p className="mt-4 text-[15px] text-paper-600">All plans include a 30-day free trial.</p>
-      </Reveal>
-      <div className="mt-12 grid gap-4 md:grid-cols-3">
-        {plans.map((plan, i) => (
-          <Reveal key={plan.name} delay={i * 90}>
-            <div
-              className={
-                plan.highlight
-                  ? "flex h-full flex-col rounded-2xl bg-paper-900 p-8 text-paper-50"
-                  : "flex h-full flex-col rounded-2xl border border-paper-900/10 bg-white/60 p-8 transition hover:border-paper-900/25"
-              }
-            >
-              <div className="flex items-center justify-between">
-                <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${plan.highlight ? "text-paper-400" : "text-paper-500"}`}>
-                  {plan.name}
-                </p>
-                {plan.highlight && (
-                  <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-paper-100">
-                    Best value
-                  </span>
-                )}
-              </div>
-              <p className="num mt-5 font-serif text-5xl tracking-tight">{plan.price}</p>
-              <p className={`mt-1.5 text-xs ${plan.highlight ? "text-paper-400" : "text-paper-500"}`}>{plan.per}</p>
-              <ul className={`mt-7 flex-1 space-y-2.5 text-sm ${plan.highlight ? "text-paper-200" : "text-paper-700"}`}>
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5">
-                    <IconCheck width={14} height={14} strokeWidth={2.4} className={`mt-0.5 shrink-0 ${plan.highlight ? "text-emerald-400" : "text-emerald-600"}`} />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                to="/auth/sign-up"
-                className={`mt-8 inline-flex h-11 items-center justify-center rounded-lg text-sm font-medium transition ${
-                  plan.highlight
-                    ? "bg-paper-50 text-paper-900 hover:bg-white"
-                    : "border border-paper-900/15 bg-transparent text-paper-900 hover:border-paper-900/30 hover:bg-white"
-                }`}
-              >
-                {plan.cta}
-              </Link>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------ faq ---------------------------------- */
 
 function Faq() {
   const faqs: Array<[string, string]> = [
     ["How does the email integration work?", "Forward pitch emails to your VentureLabs address (or connect via webhook). Every inbound email is deduped, triaged by AI, and turned into a fully populated deal — attachments included."],
     ["Does it work with DocSend links?", "Yes. Paste any DocSend, Pitch, Google Drive or Canva link and VentureLabs produces a permanent PDF copy attached to the company record, so the material is yours even after the link expires."],
     ["What can the AI extract?", "Anything you define: sector, geography, team size, ARR, growth, check size, conviction — your custom fields become extraction targets automatically."],
-    ["How do AI credits work?", "Every plan includes 500 AI credits per user per month. Extraction, triage, classification and memo generation draw down the balance; top-ups are available pay-as-you-go."],
+    ["How do AI credits work?", "The demo workspace includes 500 AI credits per user per month. Extraction, triage, classification and memo generation draw down the balance."],
     ["Can AI agents operate my CRM?", "That's the point. VentureLabs ships with a full MCP server — 105 tools covering everything the UI can do and more — so Claude, GPT or your own agents can run triage, updates, diligence vaults and reviews."],
     ["Is my data secure?", "Each firm's data lives in an isolated workspace. Files are stored privately behind signed URLs, every change is audited, and you can export everything at any time."],
   ];
@@ -1212,8 +1108,7 @@ function FinalCta() {
             flow in under five minutes.
           </p>
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/auth/sign-up" className={btnDark}>Start free trial</Link>
-            <Link to="/app" className={btnGhost}>Open live demo →</Link>
+            <Link to="/demo" className={btnDark}>Try the demo</Link>
           </div>
         </Reveal>
       </div>
@@ -1226,7 +1121,7 @@ function FinalCta() {
 function Footer() {
   const cols: Array<[string, Array<[string, string]>]> = [
     ["Resources", [["Blog", "/blog"], ["Changelog", "/changelog"]]],
-    ["Company", [["About", "/about"], ["Pricing", "#pricing"], ["Contact", "mailto:support@venturelabs.vercel.app"]]],
+    ["Company", [["About", "/about"], ["Contact", "mailto:support@venturelabs.vercel.app"]]],
     ["Legal", [["Privacy policy", "/privacy-policy"], ["Terms of service", "/terms-of-service"], ["Cookie policy", "/cookie-policy"]]],
   ];
   return (
@@ -1298,7 +1193,6 @@ export default function Landing() {
         <AgentsSection />
         <SecuritySection />
         <Quotes />
-        <Pricing />
         <Faq />
         <FinalCta />
       </main>
