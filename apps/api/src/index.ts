@@ -21,7 +21,11 @@ async function main() {
   if (process.env.API_RUN_WORKERS !== "false") {
     const core = (app as unknown as { core: import("@copyr/core").Core }).core;
     await core.startWorkers();
-    console.log("Background workers running (process-email, parse-document, convert-link)");
+    console.log("Background workers running (process-email, parse-document, convert-link, run-agent, run-workflows)");
+  } else {
+    console.warn(
+      "[warn] API_RUN_WORKERS=false — agent runs and automations will execute inline (or stall on older builds). Prefer enabling workers in production.",
+    );
   }
 
   await app.listen({ port: config.API_PORT, host: "0.0.0.0" });

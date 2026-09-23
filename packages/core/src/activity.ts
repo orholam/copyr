@@ -83,4 +83,14 @@ export async function logActivity(
   await exec.execute(
     sql`select pg_notify(${CHANNEL}, ${safePayload})`,
   );
+
+  // When pg-boss is disabled, NOTIFY alone won't run automations (no worker
+  // subscribed). Evaluate workflows inline so Thesis Screener etc. still fire.
+  if (!ctx.boss && !(event.data as Record<string, unknown> | null)?.__wf) {
+    void import("./services/automation.js")
+      .then((m) => m.evaluateWorkflowsForEvent(ctx, event))
+      .catch((err) => {
+        console.error("[run-workflows-inline]", err instanceof Error ? err.message : err);
+      });
+  }
 }

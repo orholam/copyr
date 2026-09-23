@@ -6,6 +6,7 @@ import {
   documents,
   notes,
   portfolioUpdates,
+  workflows,
 } from "@copyr/db/schema.js";
 import type {
   AgentConfig,
@@ -115,6 +116,33 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       isActive: true,
     });
   }
+
+  await ensureDefaultAgentWorkflows(ctx, workspaceId);
+}
+
+/**
+ * Wire Thesis Screener into inbound deal flow so automations work out of the
+ * box (idempotent by workflow name).
+ */
+export async function ensureDefaultAgentWorkflows(
+  ctx: CoreContext,
+  workspaceId: string,
+): Promise<void> {
+  const existing = await ctx.db
+    .select({ name: workflows.name })
+    .from(workflows)
+    .where(eq(workflows.workspaceId, workspaceId));
+  if (existing.some((w) => w.name === "Screen new companies")) return;
+
+  await ctx.db.insert(workflows).values({
+    workspaceId,
+    name: "Screen new companies",
+    description: "Runs Thesis Screener whenever a company is added to the pipeline.",
+    triggerEvent: "company.created",
+    conditions: [],
+    actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
+    isEnabled: true,
+  });
 }
 
 export async function listAgents(ctx: CoreContext, session: Session): Promise<AgentDto[]> {
@@ -236,6 +264,12 @@ export async function queueAgentRun(
     workspaceId: session.workspaceId,
     runId: run.id,
   });
+  // If pg-boss is down / disabled, do not leave the run stuck in `queued`.
+  if (!jobId) {
+    const { executeAgentRun } = await import("../jobs/agentRunner.js");
+    await executeAgentRun(ctx, session.workspaceId, run.id);
+    return { run: await getRun(ctx, session.workspaceId, run.id) };
+  }
   return { run: mapRun(run, agent.name), jobId };
 }
 
