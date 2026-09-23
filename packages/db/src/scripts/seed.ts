@@ -645,52 +645,78 @@ async function main() {
     },
   ]);
 
-  // ── unified automations demo: event → agent → action chains ────────
+  // ── unified automations: event → agent → action chains ─────────────
   await db.insert(workflows).values([
     {
       workspaceId: wsId,
       name: "Promote advancing screens",
-      description: "When any thesis screen comes back 'advance', stamp conviction and brief the team.",
+      description:
+        "When Thesis Screener says advance, stamp High conviction, move to Initial Review, and brief the team.",
       triggerEvent: "agent_run.completed",
       conditions: [{ field: "output.recommendation", op: "eq", value: "advance" }],
       actions: [
         { type: "set_deal_fields", config: { fields: { conviction: "High" } } },
-        { type: "add_note", config: { body: "⚡ {{agent.name}} scored {{output.fitScore}}/100 (advance) on {{company.name}} — auto-flagged for partner attention." } },
+        { type: "move_deal", config: { stageName: "Initial Review" } },
+        {
+          type: "add_note",
+          config: {
+            body: "{{agent.name}} scored {{output.fitScore}}/100 (advance) on {{company.name}} — flagged for partner attention.",
+          },
+        },
       ],
       isEnabled: true,
       createdByUserId: gp.id,
     },
     {
       workspaceId: wsId,
-      name: "Auto-checklist when a deal enters diligence",
-      description: "Example of the run_agent pattern — dispatches judgment mid-flow. Disabled by default.",
+      name: "File pass recommendations",
+      description: "When Thesis Screener says pass, move the deal to Passed and leave a short rationale note.",
+      triggerEvent: "agent_run.completed",
+      conditions: [{ field: "output.recommendation", op: "eq", value: "pass" }],
+      actions: [
+        { type: "move_deal", config: { stageName: "Passed" } },
+        {
+          type: "add_note",
+          config: {
+            body: "{{agent.name}} recommended pass on {{company.name}} ({{output.fitScore}}/100). Auto-filed to Passed.",
+          },
+        },
+      ],
+      isEnabled: true,
+      createdByUserId: gp.id,
+    },
+    {
+      workspaceId: wsId,
+      name: "Diligence kickoff",
+      description: "When a deal enters Due Diligence, provision the standard checklist so nothing is missed.",
       triggerEvent: "deal.stage_changed",
-      conditions: [{ field: "deal.stageId", op: "exists" }],
+      conditions: [{ field: "deal.stageName", op: "eq", value: "Due Diligence" }],
       actions: [
         { type: "run_agent", config: { agentName: "Diligence Checklist Builder" } },
+        {
+          type: "add_note",
+          config: { body: "Diligence Checklist Builder spun up the standard checklist for {{company.name}}." },
+        },
       ],
-      isEnabled: false,
+      isEnabled: true,
+      createdByUserId: gp.id,
+    },
+    {
+      workspaceId: wsId,
+      name: "Flag large asks",
+      description: "Adds a priority note when an inbound deal asks for more than $5M.",
+      triggerEvent: "deal.created" as never,
+      conditions: [{ field: "deal.askAmount", op: "gte", value: 5_000_000 }],
+      actions: [
+        {
+          type: "add_note" as never,
+          config: { body: "Large ask detected on {{deal.company.name}} — prioritize first review." },
+        },
+      ],
+      isEnabled: true,
       createdByUserId: gp.id,
     },
   ]);
-
-  // Sample automation so the Automations tab demos immediately
-  await db.insert(workflows).values({
-    workspaceId: wsId,
-    name: "Flag large asks",
-    description: "Adds a priority note when an inbound deal asks for more than $5M.",
-    triggerEvent: "deal.created" as never,
-    conditions: [
-      { field: "deal.askAmount", op: "gte", value: 5_000_000 },
-    ],
-    actions: [
-      {
-        type: "add_note" as never,
-        config: { body: "Large ask detected on {{deal.company.name}} — prioritize first review." },
-      },
-    ],
-    isEnabled: true,
-  });
 
   console.log(`Seeded workspace "${ws.name}" (${wsId}) with ${companySeeds.length} companies/deals.`);
 }

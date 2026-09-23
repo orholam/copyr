@@ -16,6 +16,7 @@ import CompanyDetail from "./pages/app/CompanyDetail";
 import Settings from "./pages/app/Settings";
 import Diligence from "./pages/app/Diligence";
 import Automations from "./pages/app/Automations";
+import Workflows from "./pages/app/Workflows";
 import CommandCenter from "./pages/app/CommandCenter";
 import { SignIn, SignUp, PasswordReset, AuthCallback, RequireAuth, RequireDemoGate, DemoPasscode } from "./pages/auth";
 import PublicIntakeForm from "./pages/PublicIntakeForm";
@@ -84,6 +85,7 @@ const router = createBrowserRouter([
       { path: "inbox", element: <Inbox /> },
       { path: "diligence", element: <Diligence /> },
       { path: "automations", element: <Automations /> },
+      { path: "workflows", element: <Workflows /> },
       { path: "portfolio", element: <Portfolio /> },
       { path: "analytics", element: <Analytics /> },
       { path: "command-center", element: <CommandCenter /> },

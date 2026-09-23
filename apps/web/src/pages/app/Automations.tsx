@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import {
@@ -15,6 +16,11 @@ import {
   timeAgo,
 } from "../../components/ui";
 import { IconBot, IconPlus, IconSpark } from "../../components/icons";
+import { WorkflowMiniCanvas } from "./WorkflowBuilder";
+import { WORKFLOW_USE_CASES } from "./workflowUseCases";
+import { WorkflowEditorModal, type WorkflowRecord } from "./WorkflowEditorModal";
+
+export { WORKFLOW_USE_CASES } from "./workflowUseCases";
 
 /* ── types ─────────────────────────────────────────────────────────── */
 
@@ -37,17 +43,10 @@ interface Agent {
   lastRunAt: string | null;
 }
 
-interface Workflow {
-  id: string;
-  name: string;
-  description: string | null;
-  triggerEvent: string;
-  conditions: Array<{ field: string; op: string; value?: unknown }>;
-  actions: Array<{ type: string; config: Record<string, unknown> }>;
-  isEnabled: boolean;
+type Workflow = WorkflowRecord & {
   runCount: number;
   lastRunAt: string | null;
-}
+};
 
 interface RunItem {
   id: string;
@@ -100,7 +99,15 @@ export default function Automations() {
     <div className="animate-fade-up space-y-4">
       <PageHeader
         title="Automations"
-        subtitle="Codified judgment (agents) + event reactions (workflows) — one system"
+        subtitle="Agents, workflow runs, and ops — design flows on the Workflows board"
+        actions={
+          <Link
+            to="/app/workflows"
+            className="flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
+          >
+            Open workflows board
+          </Link>
+        }
       />
 
       {/* stats strip */}
@@ -368,109 +375,10 @@ function AgentModal({ initial, onClose }: { initial?: Agent; onClose: () => void
 
 /* ── Workflows tab — visual flow canvas ────────────────────────────── */
 
-type FlowKind = "when" | "if" | "and" | "then";
-
-const FLOW_STYLE: Record<FlowKind, { chip: string; border: string; icon: string }> = {
-  when: { chip: "border-brand-200 bg-brand-50 text-brand-700", border: "border-l-brand-500", icon: "⚡" },
-  if: { chip: "border-purple-200 bg-purple-50 text-purple-700", border: "border-l-purple-500", icon: "◆" },
-  and: { chip: "border-purple-200 bg-purple-50 text-purple-700", border: "border-l-purple-500", icon: "◆" },
-  then: { chip: "border-emerald-200 bg-emerald-50 text-emerald-700", border: "border-l-emerald-500", icon: "▶" },
-};
-
-function FlowLine() {
-  return (
-    <div className="flex h-5 shrink-0 justify-center">
-      <div className="w-px bg-paper-900/20" />
-    </div>
-  );
-}
-
-function FlowBlock({
-  kind,
-  title,
-  removable,
-  onRemove,
-  children,
-}: {
-  kind: FlowKind;
-  title?: string;
-  removable?: boolean;
-  onRemove?: () => void;
-  children: ReactNode;
-}) {
-  const st = FLOW_STYLE[kind];
-  return (
-    <div className={cx2("rounded-lg border border-paper-900/[0.1] border-l-[3px] bg-white p-2.5 shadow-card", st.border)}>
-      <div className="flex items-center gap-2">
-        <span className={cx2("rounded border px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wider", st.chip)}>
-          {st.icon} {title ?? kind}
-        </span>
-        {removable && (
-          <button
-            type="button"
-            onClick={onRemove}
-            title="Remove step"
-            className="ml-auto text-xs leading-none text-paper-300 hover:text-red-500"
-          >
-            ✕
-          </button>
-        )}
-      </div>
-      <div className="mt-2">{children}</div>
-    </div>
-  );
-}
-
-function prettyEvent(t: string): string {
-  return t.replace(/_/g, " ");
-}
-
-function summarizeAction(a: { type: string; config: Record<string, unknown> }): string {
-  const c = a.config ?? {};
-  switch (a.type) {
-    case "add_note": return `"${String(c.body ?? "").slice(0, 60)}"`;
-    case "move_deal": return `to ${String(c.stageName ?? "?")}`;
-    case "run_agent": return `dispatch "${String(c.agentName ?? c.agentId ?? "?")}"`;
-    case "set_deal_fields":
-    case "set_company_fields": return Object.keys((c.fields ?? {}) as object).join(", ") || "(fields)";
-    case "create_portfolio_update": return String(c.title ?? "").slice(0, 50);
-    default: return "";
-  }
-}
-
-/** Read-only connected flow rendered on each workflow card. */
-function MiniFlow({ w }: { w: Workflow }) {
-  return (
-    <div className="mt-3 max-w-md">
-      <FlowBlock kind="when" title="when">
-        <p className="text-xs font-semibold capitalize text-paper-900">{prettyEvent(w.triggerEvent)}</p>
-      </FlowBlock>
-      {w.conditions.map((c, i) => (
-        <div key={`c${i}`}>
-          <FlowLine />
-          <FlowBlock kind={i === 0 ? "if" : "and"} title={i === 0 ? "if" : "and"}>
-            <p className="truncate font-mono text-[11px] text-paper-700">
-              {c.field} <span className="text-paper-400">{c.op}</span> {c.op === "exists" ? "" : String(c.value ?? "")}
-            </p>
-          </FlowBlock>
-        </div>
-      ))}
-      {w.actions.map((a, i) => (
-        <div key={`a${i}`}>
-          <FlowLine />
-          <FlowBlock kind="then" title={i === 0 ? "then" : "and"}>
-            <p className="text-xs font-medium text-paper-900">{prettyEvent(a.type)}</p>
-            {summarizeAction(a) && <p className="truncate text-[11px] text-paper-500">{summarizeAction(a)}</p>}
-          </FlowBlock>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function WorkflowsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boolean } }) {
   const qc = useQueryClient();
   const [canvasTarget, setCanvasTarget] = useState<Workflow | "new" | null>(null);
+  const existingNames = new Set((overviewQ.data?.workflows ?? []).map((w) => w.name));
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["automations-overview"] });
 
@@ -486,347 +394,183 @@ function WorkflowsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: 
     mutationFn: (id: string) => api.delete(`/workflows/${id}`),
     onSuccess: invalidate,
   });
+  const install = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post("/workflows", body),
+    onSuccess: invalidate,
+  });
+  const installAllMissing = useMutation({
+    mutationFn: async () => {
+      const missing = WORKFLOW_USE_CASES.filter((u) => !existingNames.has(u.name));
+      for (const u of missing) {
+        await api.post("/workflows", {
+          name: u.name,
+          description: u.blurb,
+          triggerEvent: u.triggerEvent,
+          conditions: u.conditions,
+          actions: u.actions,
+          isEnabled: true,
+        });
+      }
+      return missing.length;
+    },
+    onSuccess: invalidate,
+  });
 
   if (overviewQ.isLoading) {
     return <Skeleton className="h-32 w-full" />;
   }
+
+  const useCaseStrip = (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-paper-400">Use cases</p>
+        {WORKFLOW_USE_CASES.some((u) => !existingNames.has(u.name)) && (
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={installAllMissing.isPending}
+            onClick={() => installAllMissing.mutate()}
+          >
+            {installAllMissing.isPending ? <Spinner /> : "Install all"}
+          </Button>
+        )}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {WORKFLOW_USE_CASES.map((u) => {
+          const installed = existingNames.has(u.name);
+          return (
+            <div
+              key={u.name}
+              className="flex items-start justify-between gap-2 rounded-xl border border-paper-900/[0.08] bg-paper-50/80 px-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-paper-900">{u.name}</div>
+                <p className="mt-0.5 text-[11px] leading-snug text-paper-500">{u.blurb}</p>
+              </div>
+              {installed ? (
+                <Badge tone="green">on</Badge>
+              ) : (
+                <Button
+                  size="xs"
+                  disabled={install.isPending}
+                  onClick={() =>
+                    install.mutate({
+                      name: u.name,
+                      description: u.blurb,
+                      triggerEvent: u.triggerEvent,
+                      conditions: u.conditions,
+                      actions: u.actions,
+                      isEnabled: true,
+                    })
+                  }
+                >
+                  Add
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   if (!overviewQ.data?.workflows.length) {
     return (
-      <EmptyState
-        icon={<IconSpark width={20} height={20} />}
-        title="No workflows yet"
-        hint="WHEN something happens IF conditions match THEN act — including dispatching an agent."
-      />
+      <div className="space-y-4">
+        {useCaseStrip}
+        <EmptyState
+          icon={<IconSpark width={20} height={20} />}
+          title="No workflows yet"
+          hint="Install a use case above, or open a blank canvas and drag nodes onto the dotted board."
+          action={
+            <Button size="sm" onClick={() => setCanvasTarget("new")}>
+              <IconPlus width={14} height={14} /> Blank canvas
+            </Button>
+          }
+        />
+        {canvasTarget && (
+          <WorkflowEditorModal
+            initial={canvasTarget === "new" ? undefined : canvasTarget}
+            onClose={() => setCanvasTarget(null)}
+          />
+        )}
+      </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {overviewQ.data.workflows.map((w) => {
-        const testResult = w.id === test.variables ? (test.data as Record<string, unknown> | undefined) : undefined;
-        return (
-          <div key={w.id} className="panel p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-paper-900">{w.name}</span>
-                  <Badge tone={w.isEnabled ? "green" : "slate"}>{w.isEnabled ? "enabled" : "disabled"}</Badge>
+    <div className="space-y-4">
+      {useCaseStrip}
+
+      <div className="space-y-3">
+        {overviewQ.data.workflows.map((w) => {
+          const testResult = w.id === test.variables ? (test.data as Record<string, unknown> | undefined) : undefined;
+          return (
+            <div key={w.id} className="panel p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-paper-900">{w.name}</span>
+                    <Badge tone={w.isEnabled ? "green" : "slate"}>{w.isEnabled ? "enabled" : "disabled"}</Badge>
+                  </div>
+                  {w.description && <p className="mt-0.5 text-xs text-paper-500">{w.description}</p>}
                 </div>
-                {w.description && <p className="mt-0.5 text-xs text-paper-500">{w.description}</p>}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button size="xs" variant="ghost" onClick={() => setCanvasTarget(w)}>Edit</Button>
+                  <Button size="xs" variant="outline" onClick={() => test.mutate(w.id)} disabled={test.isPending}>
+                    Test
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={() => toggle.mutate({ id: w.id, isEnabled: !w.isEnabled })}>
+                    {w.isEnabled ? "Disable" : "Enable"}
+                  </Button>
+                  <button
+                    className="rounded p-1 text-xs text-paper-400 hover:bg-red-50 hover:text-red-600"
+                    onClick={() => del.mutate(w.id)}
+                    title="Delete"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Button size="xs" variant="ghost" onClick={() => setCanvasTarget(w)}>Edit</Button>
-                <Button size="xs" variant="outline" onClick={() => test.mutate(w.id)} disabled={test.isPending}>
-                  Test
-                </Button>
-                <Button size="xs" variant="outline" onClick={() => toggle.mutate({ id: w.id, isEnabled: !w.isEnabled })}>
-                  {w.isEnabled ? "Disable" : "Enable"}
-                </Button>
-                <button
-                  className="rounded p-1 text-xs text-paper-400 hover:bg-red-50 hover:text-red-600"
-                  onClick={() => del.mutate(w.id)}
-                  title="Delete"
-                >
-                  ✕
-                </button>
+
+              <WorkflowMiniCanvas
+                triggerEvent={w.triggerEvent}
+                conditionCount={w.conditions.length}
+                actionLabels={w.actions.map((a) => a.type)}
+              />
+
+              <div className="mt-2.5 flex items-center gap-3 text-[11px] text-paper-400">
+                <span>{w.runCount} run{w.runCount === 1 ? "" : "s"}</span>
+                {w.lastRunAt && <span>last {timeAgo(w.lastRunAt)}</span>}
               </div>
+
+              {testResult !== undefined && (
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-paper-900/[0.08] bg-paper-50 p-2 font-mono text-[10px] text-paper-600">
+                  {testResult.note ? String(testResult.note) + "\n" : ""}{JSON.stringify(testResult.steps ?? testResult, null, 2).slice(0, 600)}
+                </pre>
+              )}
             </div>
+          );
+        })}
 
-            {/* the flow itself, as connected blocks */}
-            <MiniFlow w={w} />
-
-            <div className="mt-2.5 flex items-center gap-3 text-[11px] text-paper-400">
-              <span>{w.runCount} run{w.runCount === 1 ? "" : "s"}</span>
-              {w.lastRunAt && <span>last {timeAgo(w.lastRunAt)}</span>}
-            </div>
-
-            {testResult !== undefined && (
-              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-paper-900/[0.08] bg-paper-50 p-2 font-mono text-[10px] text-paper-600">
-                {testResult.note ? String(testResult.note) + "\n" : ""}{JSON.stringify(testResult.steps ?? testResult, null, 2).slice(0, 600)}
-              </pre>
-            )}
-          </div>
-        );
-      })}
-
-      <button
-        onClick={() => setCanvasTarget("new")}
-        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-paper-900/[0.18] py-3 text-sm font-medium text-paper-500 transition hover:border-brand-500/40 hover:text-brand-700"
-      >
-        <IconPlus width={14} height={14} /> New workflow — WHEN something happens THEN act
-      </button>
+        <button
+          onClick={() => setCanvasTarget("new")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-paper-900/[0.18] py-3 text-sm font-medium text-paper-500 transition hover:border-brand-500/40 hover:text-brand-700"
+        >
+          <IconPlus width={14} height={14} /> New workflow — open the visual canvas
+        </button>
+      </div>
 
       {canvasTarget && (
-        <WorkflowCanvasModal initial={canvasTarget === "new" ? undefined : canvasTarget} onClose={() => setCanvasTarget(null)} />
+        <WorkflowEditorModal
+          initial={canvasTarget === "new" ? undefined : canvasTarget}
+          onClose={() => setCanvasTarget(null)}
+        />
       )}
     </div>
   );
 }
 
-interface CondDraft {
-  field: string;
-  op: string;
-  value: string;
-}
-interface ActionDraft {
-  type: string;
-  config: Record<string, unknown>;
-}
-
-const TRIGGER_OPTIONS = [
-  "deal.created",
-  "deal.stage_changed",
-  "deal.updated",
-  "company.created",
-  "company.updated",
-  "email.processed",
-  "email.needs_review",
-  "document.parsed",
-  "extraction.completed",
-  "note.added",
-  "portfolio_update.created",
-  "agent_run.completed",
-];
-
-/** Visual block builder — WHEN → IF gates → THEN actions, connected. */
-function WorkflowCanvasModal({ initial, onClose }: { initial?: Workflow; onClose: () => void }) {
-  const qc = useQueryClient();
-  const save = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      initial ? api.patch(`/workflows/${initial.id}`, body) : api.post("/workflows", body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["automations-overview"] });
-      onClose();
-    },
-  });
-
-  /** stored action config → editor draft fields */
-  const actionToDraft = (a: Workflow["actions"][number]): ActionDraft => {
-    switch (a.type) {
-      case "add_note": return { type: a.type, config: { body: String(a.config.body ?? "") } };
-      case "move_deal": return { type: a.type, config: { stageName: String(a.config.stageName ?? "") } };
-      case "run_agent": return { type: a.type, config: { agentName: String(a.config.agentName ?? "") } };
-      case "create_portfolio_update": return { type: a.type, config: { title: String(a.config.title ?? "") } };
-      case "set_deal_fields":
-      case "set_company_fields": {
-        const fields = (a.config.fields ?? {}) as Record<string, unknown>;
-        return {
-          type: a.type,
-          config: {
-            fieldsText: Object.entries(fields).map(([k, v]) => `${k}=${String(v)}`).join(", "),
-          },
-        };
-      }
-      default: return { type: a.type, config: {} };
-    }
-  };
-
-  const [name, setName] = useState(initial?.name ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [triggerEvent, setTriggerEvent] = useState(initial?.triggerEvent ?? "deal.created");
-  const [conditions, setConditions] = useState<CondDraft[]>(
-    (initial?.conditions ?? []).map((c) => ({ field: c.field, op: c.op, value: c.op === "exists" ? "" : String(c.value ?? "") })),
-  );
-  const [actions, setActions] = useState<ActionDraft[]>(
-    initial?.actions.length ? initial.actions.map(actionToDraft) : [{ type: "add_note", config: { body: "" } }],
-  );
-
-  const updateCond = (i: number, patch: Partial<CondDraft>) =>
-    setConditions(conditions.map((c, j) => (j === i ? { ...c, ...patch } : c)));
-  const updateAction = (i: number, patch: Partial<ActionDraft>) =>
-    setActions(actions.map((a, j) => (j === i ? { ...a, ...patch } : a)));
-
-  const submit = () => {
-    save.mutate({
-      name,
-      description: description || undefined,
-      triggerEvent,
-      conditions: conditions
-        .filter((c) => c.field)
-        .map((c) => ({
-          field: c.field,
-          op: c.op,
-          value: c.op === "exists" ? undefined : c.value,
-        })),
-      actions: actions.map((a) => ({
-        type: a.type,
-        config:
-          a.type === "add_note" ? { body: String(a.config.body ?? "") } :
-          a.type === "move_deal" ? { stageName: String(a.config.stageName ?? "") } :
-          a.type === "run_agent" ? { agentName: String(a.config.agentName ?? "") } :
-          a.type === "create_portfolio_update" ? { title: String(a.config.title ?? "") } :
-          {
-            fields: Object.fromEntries(
-              String(a.config.fieldsText ?? "")
-                .split(",")
-                .filter(Boolean)
-                .map((pair) => {
-                  const eq = pair.indexOf("=");
-                  return eq < 0 ? [pair.trim(), ""] : [pair.slice(0, eq).trim(), pair.slice(eq + 1).trim()];
-                }),
-            ),
-          },
-      })),
-      isEnabled: true,
-    });
-  };
-
-  return (
-    <Modal open onClose={onClose} title={initial ? `Edit ${initial.name}` : "Design an automation"} wide>
-      <div className="space-y-4">
-        <Field label="Name">
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Advance winners automatically" />
-        </Field>
-        <Field label="Description">
-          <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this automation owns" />
-        </Field>
-
-        {/* canvas */}
-        <div className="rounded-xl border border-paper-900/[0.09] bg-paper-100/60 p-4">
-          <FlowBlock kind="when" title="when">
-            <select className={`${inputCls} capitalize`} value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
-              {TRIGGER_OPTIONS.map((t) => (
-                <option key={t} value={t}>{prettyEvent(t)}</option>
-              ))}
-            </select>
-          </FlowBlock>
-
-          {conditions.map((c, i) => (
-            <div key={`c${i}`}>
-              <FlowLine />
-              <FlowBlock
-                kind={i === 0 ? "if" : "and"}
-                title={i === 0 ? "if" : "and"}
-                removable
-                onRemove={() => setConditions(conditions.filter((_, j) => j !== i))}
-              >
-                <div className="flex gap-1.5">
-                  <input
-                    className={`${inputCls} min-w-0 flex-1`}
-                    placeholder="snapshot path e.g. output.recommendation"
-                    value={c.field}
-                    onChange={(e) => updateCond(i, { field: e.target.value })}
-                  />
-                  <select className={`${inputCls} w-24`} value={c.op} onChange={(e) => updateCond(i, { op: e.target.value })}>
-                    {["eq", "neq", "contains", "gt", "gte", "lt", "lte", "exists"].map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </select>
-                  {c.op !== "exists" && (
-                    <input
-                      className={`${inputCls} w-28`}
-                      placeholder="value"
-                      value={c.value}
-                      onChange={(e) => updateCond(i, { value: e.target.value })}
-                    />
-                  )}
-                </div>
-              </FlowBlock>
-            </div>
-          ))}
-          <div className="py-1.5 text-center">
-            <button
-              type="button"
-              className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-medium text-purple-700 transition hover:bg-purple-100"
-              onClick={() => setConditions([...conditions, { field: "", op: "eq", value: "" }])}
-            >
-              + if condition
-            </button>
-          </div>
-
-          <FlowLine />
-
-          {actions.map((a, i) => (
-            <div key={`a${i}`}>
-              <FlowBlock
-                kind="then"
-                title={i === 0 ? "then" : "and"}
-                removable
-                onRemove={() => setActions(actions.filter((_, j) => j !== i))}
-              >
-                <div className="flex gap-1.5">
-                  <select
-                    className={`${inputCls} w-44`}
-                    value={a.type}
-                    onChange={(e) => updateAction(i, { type: e.target.value, config: {} })}
-                  >
-                    {["add_note", "move_deal", "set_deal_fields", "set_company_fields", "create_portfolio_update", "run_agent"].map((t) => (
-                      <option key={t}>{t}</option>
-                    ))}
-                  </select>
-                  {a.type === "add_note" && (
-                    <input
-                      className={`${inputCls} min-w-0 flex-1`}
-                      placeholder="note body — {{company.name}} works"
-                      value={String(a.config.body ?? "")}
-                      onChange={(e) => updateAction(i, { config: { ...a.config, body: e.target.value } })}
-                    />
-                  )}
-                  {a.type === "move_deal" && (
-                    <input
-                      className={`${inputCls} min-w-0 flex-1`}
-                      placeholder="stage name e.g. Initial Review"
-                      value={String(a.config.stageName ?? "")}
-                      onChange={(e) => updateAction(i, { config: { ...a.config, stageName: e.target.value } })}
-                    />
-                  )}
-                  {a.type === "run_agent" && (
-                    <input
-                      className={`${inputCls} min-w-0 flex-1`}
-                      placeholder="agent name e.g. Thesis Screener"
-                      value={String(a.config.agentName ?? "")}
-                      onChange={(e) => updateAction(i, { config: { ...a.config, agentName: e.target.value } })}
-                    />
-                  )}
-                  {(a.type === "set_deal_fields" || a.type === "set_company_fields") && (
-                    <input
-                      className={`${inputCls} min-w-0 flex-1`}
-                      placeholder="key=value, key2=value2"
-                      value={String(a.config.fieldsText ?? "")}
-                      onChange={(e) => updateAction(i, { config: { ...a.config, fieldsText: e.target.value } })}
-                    />
-                  )}
-                  {a.type === "create_portfolio_update" && (
-                    <input
-                      className={`${inputCls} min-w-0 flex-1`}
-                      placeholder="title"
-                      value={String(a.config.title ?? "")}
-                      onChange={(e) => updateAction(i, { config: { ...a.config, title: e.target.value } })}
-                    />
-                  )}
-                </div>
-              </FlowBlock>
-              <FlowLine />
-            </div>
-          ))}
-          <div className="text-center">
-            <button
-              type="button"
-              className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100"
-              onClick={() => setActions([...actions, { type: "add_note", config: { body: "" } }])}
-            >
-              + then action
-            </button>
-          </div>
-        </div>
-
-        <p className="rounded-lg bg-paper-100 px-3 py-2 text-[11px] leading-relaxed text-paper-500">
-          React to finished agents by triggering on{" "}
-          <code className="font-mono">agent_run.completed</code> and gating on{" "}
-          <code className="font-mono">output.recommendation eq advance</code>. Use{" "}
-          <code className="font-mono">run_agent</code> to dispatch judgment mid-flow. Self-chains are blocked automatically.
-        </p>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={!name.trim() || save.isPending} onClick={submit}>
-            {save.isPending ? <Spinner /> : initial ? "Save changes" : "Create workflow"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 /* ── Runs tab ──────────────────────────────────────────────────────── */
 
 function RunsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boolean } }) {

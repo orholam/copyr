@@ -10,10 +10,7 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
+const ROOT = "/home/josiaha/Repos/copyr";
 const OUT_DIR = join(ROOT, "artifacts");
 const VIDEO_DIR = join(OUT_DIR, "playwright-video");
 mkdirSync(VIDEO_DIR, { recursive: true });
@@ -111,11 +108,16 @@ async function main() {
     await page.getByRole("button", { name: /^runs$/i }).click();
     await sleep(1000);
 
-    const deadline = Date.now() + 75_000;
+    const deadline = Date.now() + 90_000;
     let seen = false;
     while (Date.now() < deadline) {
       const text = await page.locator("body").innerText();
-      if (/completed/i.test(text) && /thesis|screen|helix|fit|advance|watch|pass/i.test(text)) {
+      // Overview summaries look like "65/100 → WATCH · …" or agent status completed
+      if (
+        (/\d+\s*\/\s*100\s*→\s*(ADVANCE|WATCH|PASS)/i.test(text) ||
+          /Thesis Screener[\s\S]{0,80}(advance|watch|pass)/i.test(text)) &&
+        /Screen new companies/i.test(text)
+      ) {
         seen = true;
         break;
       }
@@ -123,7 +125,7 @@ async function main() {
       await page.getByRole("button", { name: /^runs$/i }).click().catch(() => undefined);
     }
     console.log(seen ? "Saw completed run in UI" : "Timed out waiting for completed run UI");
-    await sleep(2500);
+    await sleep(3000);
 
     // Pipeline / company for screening note
     await gotoApp(page, "/app/pipeline");
