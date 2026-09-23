@@ -85,9 +85,12 @@ export async function createCore(opts?: {
   let boss: PgBoss | undefined;
   if (opts?.runWorkers !== false) {
     // pg-boss needs session/direct Postgres (LISTEN/NOTIFY) — never the transaction pooler.
+    // Keep this pool tiny: Supabase session pooler is often capped ~15, and a deploy
+    // briefly runs two instances (query pool + realtime + boss × 2).
     boss = new PgBoss({
       connectionString: bossUrl,
       ssl: pgSsl(bossUrl, config.DATABASE_SSL),
+      max: Math.min(3, Math.max(1, Math.floor(config.DATABASE_POOL_MAX / 3))),
     });
     boss.on("error", (err) => console.error("[pg-boss]", err.message));
     await boss.start();

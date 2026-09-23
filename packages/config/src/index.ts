@@ -93,7 +93,7 @@ const schema = z.object({
   DATABASE_POOL_URL: z.preprocess(emptyToUndef, z.string().startsWith("postgres").optional()),
   /** `auto` enables SSL for Supabase hosts / sslmode=require. */
   DATABASE_SSL: z.enum(["auto", "require", "disable"]).default("auto"),
-  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(5),
 
   /**
    * S3-compatible endpoint. MinIO locally; Supabase Storage S3 API in prod:

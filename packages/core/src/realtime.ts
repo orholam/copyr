@@ -18,7 +18,7 @@ export class RealtimeBus {
 
   constructor(connectionString: string) {
     this.connectionString = connectionString;
-    this.pool = new pg.Pool({ connectionString, max: 3 });
+    this.pool = new pg.Pool({ connectionString, max: 2 });
   }
 
   async publish(payload: unknown): Promise<void> {
