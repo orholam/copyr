@@ -51,6 +51,7 @@ describe("withContractEnforcement", () => {
       subject: "Intro to Acme",
       fromEmail: "a@b.com",
       bodyText: "Would love to intro Acme raising seed",
+      knownCompanyNames: [],
     });
     expect(triage.intent).toBeTruthy();
   });
