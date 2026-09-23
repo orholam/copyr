@@ -141,7 +141,10 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
     | "company.created"
     | "agent_run.completed"
     | "deal.stage_changed"
-    | "deal.created";
+    | "deal.created"
+    | "extraction.completed"
+    | "document.parsed"
+    | "company.updated";
   conditions: Array<{ field: string; op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists"; value?: unknown }>;
   actions: Array<{
     type: "add_note" | "move_deal" | "set_deal_fields" | "set_company_fields" | "create_portfolio_update" | "run_agent";
@@ -169,10 +172,15 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
     name: "Screen after enrichment",
     description: "After the Website Enricher runs, re-screen with the enriched context.",
     triggerEvent: "agent_run.completed",
-    conditions: [
-      { field: "agent.name", op: "eq", value: "Website Enricher" },
-      { field: "output.enriched", op: "eq", value: true },
-    ],
+    conditions: [{ field: "agent.name", op: "eq", value: "Website Enricher" }],
+    actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
+    isEnabled: true,
+  },
+  {
+    name: "Re-screen after deck content arrives",
+    description: "When a deck is extracted, re-screen the company with the new material.",
+    triggerEvent: "extraction.completed",
+    conditions: [],
     actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
     isEnabled: true,
   },

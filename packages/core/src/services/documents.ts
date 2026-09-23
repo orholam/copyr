@@ -180,5 +180,31 @@ export async function createDocumentFromLink(
   });
 
   await ctx.enqueue("convert-link", { workspaceId: session.workspaceId, documentId: doc.id });
+
+  // If this link creation also created a company with a plausible website domain, kick enrichment.
+  // Deck hosts like docsend/drive are not company sites — skip them.
+  const BLOCKED_HOSTS = new Set(["docsend.com", "docs.google.com", "drive.google.com", "notion.so", "pitch.com"]);
+  if (companyId && !BLOCKED_HOSTS.has(host.toLowerCase())) {
+    void (async () => {
+      try {
+        const { agents } = await import("@copyr/db/schema.js");
+        const [agent] = await ctx.db
+          .select()
+          .from(agents)
+          .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
+        if (agent) {
+          const { queueAgentRun } = await import("./agents.js");
+          await queueAgentRun(ctx, { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } }, agent.id, {
+            companyId,
+            dealId: companyId,
+            trigger: "workflow",
+          });
+          return;
+        }
+      } catch {}
+      void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId: companyId! }).catch(() => undefined);
+    })().catch(() => undefined);
+  }
+
   return { id: doc.id, status: "queued_for_conversion" };
 }

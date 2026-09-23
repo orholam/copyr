@@ -19,31 +19,45 @@ export async function enrichCompanyFromDomain(
   if (!company) return { enriched: false, detail: "company not found" };
   if (!company.domain) return { enriched: false, detail: "no domain" };
 
-  const url = `https://${company.domain}`;
+  const candidates = [`https://${company.domain}`, `http://${company.domain}`];
   let html = "";
   let title = "";
   let desc = "";
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": USER_AGENT },
-      signal: AbortSignal.timeout(ENRICH_TIMEOUT_MS),
-    });
-    if (!res.ok) return { enriched: false, detail: `fetch ${res.status}` };
-    html = await res.text();
-    title = html.match(/<title[^>]*>([^<]{1,160})<\/title>/i)?.[1]?.trim() ?? "";
-    desc =
-      html.match(/<meta[^>]+name="description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
-      html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
-      "";
-    if (!desc) {
-      const p = html.match(/<p[^>]*>([^<]{30,300})<\/p>/i)?.[1]?.replace(/\s+/g, " ").trim();
-      if (p) desc = p.slice(0, 400);
+  let lastStatus: string | null = null;
+  let fetched = false;
+  let fetchedUrl: string | null = null;
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, {
+        headers: { "user-agent": USER_AGENT, accept: "text/html,*/*" },
+        signal: AbortSignal.timeout(ENRICH_TIMEOUT_MS),
+        redirect: "follow",
+      });
+      lastStatus = String(res.status);
+      // try to read body even on non-2xx (some sites 403 but still send html)
+      html = await res.text().catch(() => "");
+      if (html) {
+        fetched = true;
+        fetchedUrl = url;
+        break;
+      }
+      if (!res.ok) continue;
+    } catch (e) {
+      lastStatus = e instanceof Error ? e.message.slice(0, 80) : String(e).slice(0, 80);
     }
-  } catch (e) {
-    return { enriched: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+  if (!fetched || !html) return { enriched: false, detail: `fetch ${lastStatus ?? "failed"} — no html` };
+  title = html.match(/<title[^>]*>([^<]{1,160})<\/title>/i)?.[1]?.trim() ?? "";
+  desc =
+    html.match(/<meta[^>]+name="description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
+    html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
+    "";
+  if (!desc) {
+    const p = html.match(/<p[^>]*>([^<]{30,300})<\/p>/i)?.[1]?.replace(/\s+/g, " ").trim();
+    if (p) desc = p.slice(0, 400);
   }
 
-  const textBlob = [title, desc, `Source: ${url}`, `Domain: ${company.domain}`].filter(Boolean).join("\n\n");
+  const textBlob = [title, desc, `Source: ${fetchedUrl ?? `https://${company.domain}`}`, `Domain: ${company.domain}`].filter(Boolean).join("\n\n");
   if (!textBlob.trim()) return { enriched: false, detail: "no content" };
 
   let inferredSector: string | null = null;
