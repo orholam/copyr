@@ -22,10 +22,10 @@ export function getWorkspaceSlug(): string | undefined {
   } catch {
     /* private mode */
   }
-  const fromEnv = import.meta.env.VITE_WORKSPACE_SLUG as string | undefined;
-  if (fromEnv) return fromEnv;
-  if (!isAuthRequired()) return WORKSPACE_SLUG;
-  return undefined;
+  // Authenticated users must use the slug remembered from /me — never force a
+  // baked-in demo workspace (that made new signups look empty / “0 credits”).
+  if (isAuthRequired()) return undefined;
+  return (import.meta.env.VITE_WORKSPACE_SLUG as string | undefined) ?? WORKSPACE_SLUG;
 }
 
 export function rememberWorkspaceSlug(slug: string): void {
