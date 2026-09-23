@@ -143,47 +143,78 @@ export async function executeAgentRun(
         }
       }
 
-      const [{ maxPos }] = await ctx.db
-        .select({ maxPos: sql<string | null>`max(${tasks.position})` })
-        .from(tasks)
-        .where(spaceId ? eq(tasks.spaceId, spaceId) : sql`false`);
-      let prev: string | null = maxPos ?? null;
+      // Idempotent: if this company already has open tasks matching the template, reuse them
+      // instead of provisioning a duplicate checklist (duplicate workflows used to double-fire).
+      const existingOpen = companyId
+        ? await ctx.db
+            .select({ id: tasks.id, title: tasks.title })
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.workspaceId, workspaceId),
+                eq(tasks.companyId, companyId),
+                eq(tasks.status, "open"),
+              ),
+            )
+        : [];
+      const existingTitles = new Set(existingOpen.map((t) => t.title));
+      const alreadyProvisioned = items.every((item) => existingTitles.has(item));
 
       const createdTasks: Array<{ taskId: string; title: string }> = [];
-      for (const item of items) {
-        const position = generateKeyBetween(prev, null);
-        const [task] = await ctx.db
-          .insert(tasks)
-          .values({
-            workspaceId,
-            spaceId: spaceId ?? null,
-            companyId: companyId ?? null,
-            dealId: run.dealId ?? null,
-            title: item,
-            status: "open",
-            position,
-          })
-          .returning();
-        createdTasks.push({ taskId: task.id, title: item });
-        prev = position;
+      if (alreadyProvisioned) {
+        for (const t of existingOpen) {
+          if (items.includes(t.title)) createdTasks.push({ taskId: t.id, title: t.title });
+        }
+        steps.push({
+          step: "checklist_already_present",
+          status: "ok",
+          detail: `${createdTasks.length} existing task(s)`,
+          at: now(),
+        });
+      } else {
+        const [{ maxPos }] = await ctx.db
+          .select({ maxPos: sql<string | null>`max(${tasks.position})` })
+          .from(tasks)
+          .where(spaceId ? eq(tasks.spaceId, spaceId) : sql`false`);
+        let prev: string | null = maxPos ?? null;
+
+        for (const item of items) {
+          if (existingTitles.has(item)) continue;
+          const position = generateKeyBetween(prev, null);
+          const [task] = await ctx.db
+            .insert(tasks)
+            .values({
+              workspaceId,
+              spaceId: spaceId ?? null,
+              companyId: companyId ?? null,
+              dealId: run.dealId ?? null,
+              title: item,
+              status: "open",
+              position,
+            })
+            .returning();
+          createdTasks.push({ taskId: task.id, title: item });
+          prev = position;
+        }
+        steps.push({
+          step: "checklist_provisioned",
+          status: "ok",
+          detail: `${createdTasks.length} task(s)`,
+          at: now(),
+        });
       }
 
-      output = { createdTasks, spaceId };
-      steps.push({
-        step: "checklist_provisioned",
-        status: "ok",
-        detail: `${items.length} task(s)`,
-        at: now(),
-      });
+      output = { createdTasks, spaceId, reused: alreadyProvisioned };
 
-      if (companyId) {
+      if (companyId && createdTasks.length) {
         const spaceLabel = spaceId
           ? (
               await ctx.db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, spaceId)).limit(1)
             )[0]?.name ?? "Diligence space"
           : "Diligence space";
+        const verb = alreadyProvisioned ? "confirmed" : "provisioned";
         const noteBody =
-          `**${agent.name}** provisioned ${createdTasks.length} open diligence tasks in “${spaceLabel}”:\n\n` +
+          `**${agent.name}** ${verb} ${createdTasks.length} open diligence tasks in “${spaceLabel}”:\n\n` +
           createdTasks.map((t) => `- [ ] ${t.title}`).join("\n");
         await ctx.db.insert(notes).values({
           workspaceId,
@@ -198,7 +229,7 @@ export async function executeAgentRun(
           companyId,
           dealId: run.dealId,
           type: "note.added",
-          summary: `${agent.name} added ${createdTasks.length} diligence tasks to “${spaceLabel}”`,
+          summary: `${agent.name} ${alreadyProvisioned ? "confirmed" : "added"} ${createdTasks.length} diligence tasks to “${spaceLabel}”`,
           actor: "ai",
           data: {
             spaceId,
@@ -206,6 +237,7 @@ export async function executeAgentRun(
             taskCount: createdTasks.length,
             tasks: createdTasks.map((t) => t.title),
             agentName: agent.name,
+            reused: alreadyProvisioned,
           },
         });
         steps.push({ step: "checklist_note_written", status: "ok", at: now() });

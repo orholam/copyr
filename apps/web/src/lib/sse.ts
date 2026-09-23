@@ -29,19 +29,32 @@ function dispatchActivity(client: QueryClient, data: { entityType: string; type:
     return;
   }
   const map: Record<string, string[][]> = {
-    deal: [["deals"], ["deal"]],
-    company: [["companies"], ["company"]],
+    deal: [["deals"], ["deal"], ["activity"], ["notes"]],
+    company: [["companies"], ["company"], ["activity"], ["notes"], ["spaces"], ["tasks"]],
     email: [["emails"]],
     document: [["documents"]],
-    note: [["notes"]],
+    note: [["notes"], ["activity"]],
     portfolio_update: [["portfolio"]],
-    stage: [["pipelines"]],
+    stage: [["pipelines"], ["deals"], ["activity"]],
     activity: [["activity"]],
+    // agent / workflow runs land on the company timeline + diligence side panel
+    agent_run: [["activity"], ["notes"], ["spaces"], ["tasks"], ["automations-overview"]],
+    workflow_run: [["activity"], ["automations-overview"]],
+    space: [["spaces"], ["tasks"]],
+    task: [["tasks"], ["spaces"]],
   };
   for (const keys of map[data.entityType] ?? []) {
     for (const key of keys) {
       void client.invalidateQueries({ queryKey: [key] });
     }
+  }
+  // Always refresh the automations overview on AI work so Agents → Runs stays live
+  if (data.type?.startsWith("agent_run") || data.type?.startsWith("workflow")) {
+    void client.invalidateQueries({ queryKey: ["automations-overview"] });
+    void client.invalidateQueries({ queryKey: ["activity"] });
+    void client.invalidateQueries({ queryKey: ["notes"] });
+    void client.invalidateQueries({ queryKey: ["spaces"] });
+    void client.invalidateQueries({ queryKey: ["tasks"] });
   }
 }
 

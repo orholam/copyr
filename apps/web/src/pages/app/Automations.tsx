@@ -98,33 +98,20 @@ export default function Automations() {
     <div className="animate-fade-up space-y-4">
       <PageHeader
         title="Agents"
-        subtitle={
-          <>
-            Judgment engines that <em>do work</em> (screen, build checklists, monitor). Wire them into events on{" "}
-            <Link to="/app/workflows" className="font-medium text-brand-700 hover:underline">
-              Workflows
-            </Link>
-            .
-          </>
-        }
+        subtitle="Judgment engines that screen companies, build diligence checklists, and monitor the portfolio. Event rules that call them live on Workflows."
         actions={
           <Link
             to="/app/workflows"
             className="flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
           >
-            When → then rules
+            Open Workflows
           </Link>
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2">
         <Stat label="Active agents" value={overviewQ.data?.stats.activeAgents ?? 0} />
-        <Stat label="Agent + workflow runs (7d)" value={overviewQ.data?.stats.runsLast7d ?? 0} />
-        <Stat
-          label="Workflows that call agents"
-          value={overviewQ.data?.stats.enabledWorkflows ?? 0}
-          sub="edit on Workflows"
-        />
+        <Stat label="Runs (7d)" value={overviewQ.data?.stats.runsLast7d ?? 0} />
       </div>
 
       <SegmentedControl
@@ -230,11 +217,7 @@ function AgentsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boo
       {runTarget && (
         <Modal open onClose={() => setRunTarget(null)} title={`Run ${runTarget.name}`}>
           <p className="mb-3 text-sm text-paper-600">
-            Runs against a company in your workspace. Prefer wiring this into a{" "}
-            <Link to="/app/workflows" className="text-brand-700 hover:underline">
-              workflow
-            </Link>{" "}
-            so it fires automatically.
+            Runs this agent once against a company. For automatic runs on stage changes, add a rule on Workflows.
           </p>
           <RunAgentForm agentId={runTarget.id} onDone={() => setRunTarget(null)} />
         </Modal>
@@ -341,7 +324,7 @@ function RunsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boole
       <EmptyState
         icon={<IconSpark width={20} height={20} />}
         title="No runs yet"
-        hint="Agent executions and workflow fires appear here together."
+        hint="Every agent execution shows up here — what ran and what it produced."
       />
     );
   }

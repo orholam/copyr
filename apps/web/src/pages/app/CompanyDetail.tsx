@@ -120,11 +120,13 @@ export default function CompanyDetail() {
     queryKey: ["notes", id],
     queryFn: () => api.get<Note[]>(`/notes?companyId=${id}`),
     enabled: !!id,
+    refetchInterval: 5000,
   });
   const activityQ = useQuery({
     queryKey: ["activity", id],
     queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${id}&limit=30`),
     enabled: !!id,
+    refetchInterval: 5000,
   });
   const allCompaniesQ = useQuery({
     queryKey: ["companies-all"],
@@ -146,7 +148,14 @@ export default function CompanyDetail() {
     },
   });
 
-  if (!companyQ.data) {
+  if (companyQ.isError) {
+    return (
+      <div className="animate-fade-up rounded-xl border border-red-500/20 bg-red-500/[0.06] p-6 text-sm text-red-700">
+        Couldn’t load this company. {(companyQ.error as Error)?.message ?? "Try refreshing."}
+      </div>
+    );
+  }
+  if (!companyQ.data || Array.isArray(companyQ.data)) {
     return (
       <div className="animate-fade-up space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -164,7 +173,7 @@ export default function CompanyDetail() {
   const deal = dealsQ.data?.items[0];
   const allStages = stagesQ.data?.flatMap((p) => p.stages) ?? [];
   const stage = deal && allStages.find((s) => s.id === deal.stageId);
-  const fieldEntries = Object.entries(c.fields).filter(([, v]) => v !== null && v !== undefined);
+  const fieldEntries = Object.entries(c.fields ?? {}).filter(([, v]) => v !== null && v !== undefined);
 
   return (
     <div className="animate-fade-up mx-auto max-w-5xl pb-10">
@@ -330,7 +339,9 @@ export default function CompanyDetail() {
             <ul className="mt-4 space-y-2">
               {(notesQ.data ?? []).map((n) => (
                 <li key={n.id} className={cx("rounded-lg px-3 py-2.5", n.pinned ? "border border-amber-500/25 bg-amber-500/[0.07]" : "bg-paper-100")}>
-                  <p className="text-sm leading-relaxed text-paper-800">{n.body}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper-800">
+                    {n.body.replace(/\*\*/g, "")}
+                  </p>
                   <p className="mt-1 text-[11px] text-paper-500">{n.authorName ?? "system"} · {timeAgo(n.createdAt)}</p>
                 </li>
               ))}
@@ -494,49 +505,99 @@ function ActivityDetail({
 }) {
   if (!data) return null;
   const tasks = Array.isArray(data.tasks) ? (data.tasks as string[]) : null;
-  const taskCount = typeof data.taskCount === "number" ? data.taskCount : tasks?.length;
   const spaceName = typeof data.spaceName === "string" ? data.spaceName : null;
   const output = data.output && typeof data.output === "object" ? (data.output as Record<string, unknown>) : null;
+  const createdFromOutput = Array.isArray(output?.createdTasks)
+    ? (output!.createdTasks as Array<string | { title?: string }>).map((t) =>
+        typeof t === "string" ? t : String(t.title ?? ""),
+      ).filter(Boolean)
+    : null;
+  const checklist = tasks?.length ? tasks : createdFromOutput;
+  const steps = Array.isArray(data.steps)
+    ? (data.steps as Array<{ type?: string; detail?: string; status?: string }>)
+    : null;
 
-  if (type === "note.added" && tasks?.length) {
+  if (checklist?.length) {
     return (
       <ul className="mt-1.5 space-y-0.5 rounded-md bg-paper-100 px-2.5 py-2 text-[12px] text-paper-700">
         {spaceName && <li className="mb-1 font-medium text-paper-800">In {spaceName}</li>}
-        {tasks.slice(0, 8).map((t) => (
+        {checklist.slice(0, 8).map((t) => (
           <li key={t}>☐ {t}</li>
         ))}
-        {tasks.length > 8 && <li className="text-paper-400">+{tasks.length - 8} more</li>}
+        {checklist.length > 8 && <li className="text-paper-400">+{checklist.length - 8} more</li>}
       </ul>
     );
   }
-  if (type === "agent_run.completed" && (taskCount || output?.recommendation)) {
+  if (type === "agent_run.completed" && output?.recommendation) {
     return (
-      <p className="mt-1 text-[11px] text-paper-500">
-        {output?.recommendation
-          ? `Recommendation: ${String(output.recommendation)}${output.fitScore != null ? ` · fit ${String(output.fitScore)}/100` : ""}`
-          : taskCount
-            ? `${taskCount} tasks created${spaceName ? ` in ${spaceName}` : ""}`
-            : null}
-      </p>
+      <div className="mt-1.5 rounded-md bg-paper-100 px-2.5 py-2 text-[12px] text-paper-700">
+        <p className="font-medium text-paper-900">
+          {String(output.recommendation).toUpperCase()}
+          {output.fitScore != null ? ` · fit ${String(output.fitScore)}/100` : ""}
+        </p>
+        {typeof output.summary === "string" && (
+          <p className="mt-1 text-paper-600">{output.summary}</p>
+        )}
+      </div>
+    );
+  }
+  if (type === "workflow.run" && steps?.length) {
+    return (
+      <ul className="mt-1 space-y-0.5 text-[11px] text-paper-500">
+        {steps.map((s, i) => (
+          <li key={i}>
+            {s.status === "ok" ? "→" : "×"} {s.detail ?? s.type}
+          </li>
+        ))}
+      </ul>
     );
   }
   return null;
 }
 
 function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
+  const activityQ = useQuery({
+    queryKey: ["activity", companyId],
+    queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${companyId}&limit=30`),
+    refetchInterval: 4000,
+  });
   const spacesQ = useQuery({
     queryKey: ["spaces"],
     queryFn: () => api.get<SpaceSummary[]>("/spaces"),
+    refetchInterval: 4000,
   });
   const space = (spacesQ.data ?? []).find((s) => s.companyId === companyId);
   const tasksQ = useQuery({
     queryKey: ["tasks", space?.id],
     queryFn: () => api.get<{ items: TaskItem[] }>(`/tasks?spaceId=${space!.id}&status=open&limit=20`),
     enabled: !!space?.id,
+    refetchInterval: 4000,
   });
-  const items = tasksQ.data?.items ?? [];
-  if (!space && !spacesQ.isLoading) return null;
-  if (space && !items.length && !tasksQ.isLoading) return null;
+
+  const fromTasks = tasksQ.data?.items ?? [];
+  // Fallback: pull titles from the latest agent/note activity if spaces lag behind the run
+  const fromActivity: string[] = [];
+  for (const a of activityQ.data?.items ?? []) {
+    const titles = Array.isArray(a.data?.tasks) ? (a.data!.tasks as string[]) : null;
+    const created = Array.isArray((a.data?.output as { createdTasks?: unknown } | undefined)?.createdTasks)
+      ? ((a.data!.output as { createdTasks: Array<string | { title?: string }> }).createdTasks).map((t) =>
+          typeof t === "string" ? t : String(t.title ?? ""),
+        )
+      : null;
+    const list = titles ?? created;
+    if (list?.length) {
+      for (const t of list) if (t && !fromActivity.includes(t)) fromActivity.push(t);
+      break;
+    }
+  }
+  const pending = (activityQ.data?.items ?? []).some(
+    (a) => a.type === "agent_run.queued" || (a.type === "workflow.run" && /Checklist Builder/i.test(a.summary)),
+  );
+  const items = fromTasks.length
+    ? fromTasks.map((t) => ({ id: t.id, title: t.title }))
+    : fromActivity.map((t, i) => ({ id: `act-${i}`, title: t }));
+
+  if (!items.length && !pending && !spacesQ.isLoading && !tasksQ.isLoading) return null;
 
   return (
     <div className="panel p-3.5">
@@ -544,7 +605,9 @@ function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
         Diligence checklist
         {space ? <span className="ml-1 font-normal text-paper-400">· {space.name}</span> : null}
       </h2>
-      {tasksQ.isLoading || spacesQ.isLoading ? (
+      {!items.length && pending ? (
+        <p className="text-[12.5px] text-paper-500">Building checklist…</p>
+      ) : tasksQ.isLoading || spacesQ.isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : (
         <ul className="space-y-1.5 text-[12.5px] text-paper-800">
