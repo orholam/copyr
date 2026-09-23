@@ -6,6 +6,7 @@ import {
   type AiProvider,
   type DeckExtraction,
   type EmailTriage,
+  type ThesisScoreOutput,
   type UpdateClassification,
 } from "./types.js";
 
@@ -117,5 +118,35 @@ export function withContractEnforcement(provider: AiProvider): AiProvider {
       confidence: typeof out?.confidence === "number" ? Math.min(1, Math.max(0, out.confidence)) : 0.5,
     };
   };
+  wrapped.scoreThesis = async (input) => normalizeThesisScore(await provider.scoreThesis(input));
   return wrapped;
+}
+
+const RECS = ["advance", "watch", "pass"] as const;
+
+function normalizeThesisScore(raw: unknown): ThesisScoreOutput {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const rec = String(r.recommendation ?? "watch").toLowerCase();
+  const fit =
+    typeof r.fitScore === "number" && Number.isFinite(r.fitScore)
+      ? Math.max(0, Math.min(100, Math.round(r.fitScore)))
+      : 50;
+  const asStrings = (v: unknown) =>
+    Array.isArray(v)
+      ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, 12)
+      : [];
+  return {
+    fitScore: fit,
+    recommendation: (RECS as readonly string[]).includes(rec) ? (rec as ThesisScoreOutput["recommendation"]) : "watch",
+    reasons: asStrings(r.reasons),
+    concerns: asStrings(r.concerns),
+    summary:
+      typeof r.summary === "string" && r.summary.trim()
+        ? r.summary.trim().slice(0, 800)
+        : "Thesis screen completed.",
+    confidence:
+      typeof r.confidence === "number" && Number.isFinite(r.confidence)
+        ? Math.max(0, Math.min(1, r.confidence))
+        : 0.7,
+  };
 }

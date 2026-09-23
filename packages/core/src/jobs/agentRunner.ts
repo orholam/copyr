@@ -82,11 +82,13 @@ export async function executeAgentRun(
       });
 
       // write a screening note on the company so the pipeline carries the result
+      const reasons = Array.isArray(score.reasons) ? score.reasons : [];
+      const concerns = Array.isArray(score.concerns) ? score.concerns : [];
       const noteBody =
-        `**${agent.name}** — fit ${score.fitScore}/100 → ${score.recommendation.toUpperCase()}\n\n` +
-        `${score.summary}\n` +
-        (score.reasons.length ? `\nReasons:\n${score.reasons.map((r) => `- ${r}`).join("\n")}` : "") +
-        (score.concerns.length ? `\nConcerns:\n${score.concerns.map((c) => `- ${c}`).join("\n")}` : "");
+        `**${agent.name}** — fit ${score.fitScore}/100 → ${String(score.recommendation ?? "watch").toUpperCase()}\n\n` +
+        `${score.summary ?? ""}\n` +
+        (reasons.length ? `\nReasons:\n${reasons.map((r) => `- ${r}`).join("\n")}` : "") +
+        (concerns.length ? `\nConcerns:\n${concerns.map((c) => `- ${c}`).join("\n")}` : "");
       await ctx.db.insert(notes).values({
         workspaceId,
         companyId,

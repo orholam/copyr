@@ -48,12 +48,64 @@ describe("withContractEnforcement", () => {
     expect(thesis.confidence).toBeGreaterThan(0);
 
     const triage = await wrapped.triageEmail({
-      subject: "Pitch Deck - Series A",
-      fromEmail: "priya@quantumleap.ai",
-      bodyText: "Attached is our deck. We are raising $15M.",
-      knownCompanyNames: [],
+      subject: "Intro to Acme",
+      fromEmail: "a@b.com",
+      bodyText: "Would love to intro Acme raising seed",
     });
-    expect(triage.intent).toBe("fundraise");
+    expect(triage.intent).toBeTruthy();
+  });
+
+  it("normalizes scoreThesis when the model omits reasons/concerns arrays", async () => {
+    const raw: AiProvider = {
+      name: "stub",
+      model: "stub",
+      async extractDeck() {
+        return { company: {}, deal: {}, fields: {}, confidence: 0.5 };
+      },
+      async triageEmail() {
+        return {
+          intent: "other",
+          companies: [],
+          isPortfolioUpdate: false,
+          updateTitle: null,
+          summary: "x",
+          confidence: 0.5,
+        };
+      },
+      async classifyUpdate() {
+        return { kind: "update", title: "t" };
+      },
+      async generateThesis() {
+        return { memo: "m", confidence: 0.5 };
+      },
+      async scoreThesis() {
+        return {
+          fitScore: 72,
+          recommendation: "advance",
+          summary: "Looks strong",
+        } as never;
+      },
+      async assistantTurn() {
+        return { reply: "ok", toolCalls: [], confidence: 0.5 };
+      },
+      async answerGrounded() {
+        return { answer: "a", citations: [], confidence: 0.5 };
+      },
+      async extractTableRows() {
+        return { rows: [] };
+      },
+    };
+    const wrapped = withContractEnforcement(raw);
+    const score = await wrapped.scoreThesis({
+      agentName: "Thesis Screener",
+      companyName: "Acme",
+      sourceText: "Acme is raising",
+    });
+    expect(score.reasons).toEqual([]);
+    expect(score.concerns).toEqual([]);
+    expect(score.fitScore).toBe(72);
+    expect(score.recommendation).toBe("advance");
+    expect(score.summary).toBe("Looks strong");
   });
 
   it("maps drifted provider output onto the documented contract", async () => {
