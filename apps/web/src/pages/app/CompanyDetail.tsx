@@ -9,7 +9,6 @@ import {
 import {
   IconArrowUpRight, IconBot, IconDoc, IconMapPin, IconSpark, IconUser,
 } from "../../components/icons";
-import { WorkflowEditorModal } from "./WorkflowEditorModal";
 
 interface Company {
   id: string;
@@ -36,8 +35,17 @@ interface Document_ {
   id: string; name: string; parseStatus: string; pageCount: number | null; createdAt: string; sourceUrl: string | null;
 }
 interface Note { id: string; body: string; authorName?: string | null; createdAt: string; pinned: boolean }
-interface Activity { id: string; type: string; summary: string; actor: string; createdAt: string }
+interface Activity {
+  id: string;
+  type: string;
+  summary: string;
+  actor: string;
+  createdAt: string;
+  data?: Record<string, unknown> | null;
+}
 interface Contact { id: string; name: string; email: string | null; title: string | null; isFounder: boolean }
+interface SpaceSummary { id: string; name: string; companyId: string | null }
+interface TaskItem { id: string; title: string; status: string; spaceId: string | null }
 
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
@@ -340,15 +348,19 @@ export default function CompanyDetail() {
                       a.actor === "ai" ? "bg-violet-400" : a.actor === "user" ? "bg-brand-500" : "bg-paper-300",
                     )}
                   />
-                  <span className="flex items-start gap-2 text-sm">
+                  <div className="flex items-start gap-2 text-sm">
                     {a.actor === "ai"
                       ? <IconBot width={13} height={13} className="mt-0.5 shrink-0 text-violet-600" />
                       : <IconUser width={13} height={13} className="mt-0.5 shrink-0 text-brand-700" />}
-                    <span>
-                      <span className="text-paper-900">{a.summary}</span>{" "}
-                      <span className="text-[11px] text-paper-500">{timeAgo(a.createdAt)}</span>
-                    </span>
-                  </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <ActivityTypeBadge type={a.type} />
+                        <span className="text-[11px] text-paper-500">{timeAgo(a.createdAt)}</span>
+                      </div>
+                      <p className="mt-0.5 text-paper-900">{a.summary}</p>
+                      <ActivityDetail data={a.data} type={a.type} />
+                    </div>
+                  </div>
                 </li>
               ))}
               {!activityQ.data?.items.length && <li className="text-sm text-paper-500">No activity.</li>}
@@ -357,7 +369,8 @@ export default function CompanyDetail() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20">
-          <CompanyWorkflowsStrip companyName={c.name} />
+          <CompanyDiligenceTasks companyId={id!} />
+          <CompanyWorkflowsStrip />
           <div className="panel p-3.5">
             <h2 className="mb-3 text-[13px] font-medium text-paper-800">Contacts</h2>
             {contactsQ.data?.length ? (
@@ -452,67 +465,117 @@ function Meta({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-/** Workflows that fire on company/deal events — opens the shared canvas editor. */
-function CompanyWorkflowsStrip({ companyName }: { companyName: string }) {
-  const [open, setOpen] = useState(false);
-  const overviewQ = useQuery({
-    queryKey: ["automations-overview"],
-    queryFn: () =>
-      api.get<{
-        workflows: Array<{
-          id: string;
-          name: string;
-          triggerEvent: string;
-          isEnabled: boolean;
-        }>;
-      }>("/automations/overview"),
+function ActivityTypeBadge({ type }: { type: string }) {
+  const label =
+    type === "workflow.run"
+      ? "workflow"
+      : type === "agent_run.completed"
+        ? "agent"
+        : type === "note.added"
+          ? "note"
+          : type === "deal.stage_changed"
+            ? "stage"
+            : type.replace(/\./g, " ");
+  const tone =
+    type.startsWith("workflow") || type.startsWith("agent")
+      ? "indigo"
+      : type === "deal.stage_changed"
+        ? "amber"
+        : "slate";
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
+function ActivityDetail({
+  data,
+  type,
+}: {
+  data?: Record<string, unknown> | null;
+  type: string;
+}) {
+  if (!data) return null;
+  const tasks = Array.isArray(data.tasks) ? (data.tasks as string[]) : null;
+  const taskCount = typeof data.taskCount === "number" ? data.taskCount : tasks?.length;
+  const spaceName = typeof data.spaceName === "string" ? data.spaceName : null;
+  const output = data.output && typeof data.output === "object" ? (data.output as Record<string, unknown>) : null;
+
+  if (type === "note.added" && tasks?.length) {
+    return (
+      <ul className="mt-1.5 space-y-0.5 rounded-md bg-paper-100 px-2.5 py-2 text-[12px] text-paper-700">
+        {spaceName && <li className="mb-1 font-medium text-paper-800">In {spaceName}</li>}
+        {tasks.slice(0, 8).map((t) => (
+          <li key={t}>☐ {t}</li>
+        ))}
+        {tasks.length > 8 && <li className="text-paper-400">+{tasks.length - 8} more</li>}
+      </ul>
+    );
+  }
+  if (type === "agent_run.completed" && (taskCount || output?.recommendation)) {
+    return (
+      <p className="mt-1 text-[11px] text-paper-500">
+        {output?.recommendation
+          ? `Recommendation: ${String(output.recommendation)}${output.fitScore != null ? ` · fit ${String(output.fitScore)}/100` : ""}`
+          : taskCount
+            ? `${taskCount} tasks created${spaceName ? ` in ${spaceName}` : ""}`
+            : null}
+      </p>
+    );
+  }
+  return null;
+}
+
+function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
+  const spacesQ = useQuery({
+    queryKey: ["spaces"],
+    queryFn: () => api.get<SpaceSummary[]>("/spaces"),
   });
-  const relevant = (overviewQ.data?.workflows ?? []).filter((w) =>
-    w.triggerEvent.startsWith("company.") ||
-    w.triggerEvent.startsWith("deal.") ||
-    w.triggerEvent === "agent_run.completed",
-  );
+  const space = (spacesQ.data ?? []).find((s) => s.companyId === companyId);
+  const tasksQ = useQuery({
+    queryKey: ["tasks", space?.id],
+    queryFn: () => api.get<{ items: TaskItem[] }>(`/tasks?spaceId=${space!.id}&status=open&limit=20`),
+    enabled: !!space?.id,
+  });
+  const items = tasksQ.data?.items ?? [];
+  if (!space && !spacesQ.isLoading) return null;
+  if (space && !items.length && !tasksQ.isLoading) return null;
 
   return (
     <div className="panel p-3.5">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
-          <IconBot width={13} height={13} /> Workflows
-        </h2>
-        <Link to="/app/workflows" className="text-[11px] font-medium text-brand-700 hover:underline">
-          All
-        </Link>
-      </div>
-      {relevant.length ? (
-        <ul className="mb-2 space-y-1.5">
-          {relevant.slice(0, 4).map((w) => (
-            <li key={w.id} className="flex items-center justify-between gap-2 text-[12px]">
-              <span className="truncate text-paper-800">{w.name}</span>
-              <Badge tone={w.isEnabled ? "green" : "slate"}>{w.isEnabled ? "on" : "off"}</Badge>
+      <h2 className="mb-2 text-[13px] font-medium text-paper-800">
+        Diligence checklist
+        {space ? <span className="ml-1 font-normal text-paper-400">· {space.name}</span> : null}
+      </h2>
+      {tasksQ.isLoading || spacesQ.isLoading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : (
+        <ul className="space-y-1.5 text-[12.5px] text-paper-800">
+          {items.map((t) => (
+            <li key={t.id} className="flex gap-2">
+              <span className="text-paper-400">☐</span>
+              <span>{t.title}</span>
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="mb-2 text-[12px] text-paper-500">No company/deal workflows yet.</p>
       )}
-      <Button
-        size="xs"
-        variant="outline"
-        className="w-full"
-        onClick={() => setOpen(true)}
+    </div>
+  );
+}
+
+/** Compact pointer to event rules — not a second workflows editor. */
+function CompanyWorkflowsStrip() {
+  return (
+    <div className="panel p-3.5">
+      <h2 className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
+        <IconBot width={13} height={13} /> Automations
+      </h2>
+      <p className="mb-2 text-[12px] leading-snug text-paper-500">
+        Stage moves and new companies can fire workflows (e.g. diligence checklist, thesis screen).
+      </p>
+      <Link
+        to="/app/workflows"
+        className="text-[12px] font-medium text-brand-700 hover:underline"
       >
-        Automate inbound like {companyName.split(" ")[0]}…
-      </Button>
-      {open && (
-        <WorkflowEditorModal
-          preset={{
-            name: `Screen ${companyName}`,
-            triggerEvent: "company.created",
-            description: `When a company like ${companyName} is added, run Thesis Screener.`,
-          }}
-          onClose={() => setOpen(false)}
-        />
-      )}
+        Manage workflows →
+      </Link>
     </div>
   );
 }

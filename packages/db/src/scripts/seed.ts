@@ -693,10 +693,6 @@ async function main() {
       conditions: [{ field: "deal.stageName", op: "eq", value: "Due Diligence" }],
       actions: [
         { type: "run_agent", config: { agentName: "Diligence Checklist Builder" } },
-        {
-          type: "add_note",
-          config: { body: "Diligence Checklist Builder spun up the standard checklist for {{company.name}}." },
-        },
       ],
       isEnabled: true,
       createdByUserId: gp.id,

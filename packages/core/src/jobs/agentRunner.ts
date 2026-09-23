@@ -175,6 +175,41 @@ export async function executeAgentRun(
         detail: `${items.length} task(s)`,
         at: now(),
       });
+
+      if (companyId) {
+        const spaceLabel = spaceId
+          ? (
+              await ctx.db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, spaceId)).limit(1)
+            )[0]?.name ?? "Diligence space"
+          : "Diligence space";
+        const noteBody =
+          `**${agent.name}** provisioned ${createdTasks.length} open diligence tasks in “${spaceLabel}”:\n\n` +
+          createdTasks.map((t) => `- [ ] ${t.title}`).join("\n");
+        await ctx.db.insert(notes).values({
+          workspaceId,
+          companyId,
+          body: noteBody.slice(0, 4000),
+          authorUserId: null,
+        });
+        await logActivity(ctx, ctx.db, {
+          workspaceId,
+          entityType: "company",
+          entityId: companyId,
+          companyId,
+          dealId: run.dealId,
+          type: "note.added",
+          summary: `${agent.name} added ${createdTasks.length} diligence tasks to “${spaceLabel}”`,
+          actor: "ai",
+          data: {
+            spaceId,
+            spaceName: spaceLabel,
+            taskCount: createdTasks.length,
+            tasks: createdTasks.map((t) => t.title),
+            agentName: agent.name,
+          },
+        });
+        steps.push({ step: "checklist_note_written", status: "ok", at: now() });
+      }
     }
 
     // ── portfolio_monitor ────────────────────────────────────────────
@@ -287,9 +322,15 @@ export async function executeAgentRun(
       companyId: run.companyId,
       dealId: run.dealId,
       type: "agent_run.completed",
-      summary: `Agent "${agent.name}" completed`,
+      summary: summarizeAgentCompletion(agent.name, agent.kind, output),
       actor: "ai",
-      data: { output },
+      data: {
+        output,
+        agentName: agent.name,
+        agentKind: agent.kind,
+        spaceId: typeof output.spaceId === "string" ? output.spaceId : null,
+        taskCount: Array.isArray(output.createdTasks) ? output.createdTasks.length : null,
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -395,6 +436,23 @@ async function resolveCompanyId(
 async function companyName(ctx: CoreContext, companyId: string): Promise<string> {
   const [row] = await ctx.db.select({ name: companies.name }).from(companies).where(eq(companies.id, companyId));
   return row?.name ?? "Company";
+}
+
+function summarizeAgentCompletion(
+  agentName: string,
+  kind: string,
+  output: Record<string, unknown>,
+): string {
+  if (kind === "diligence_checklist") {
+    const n = Array.isArray(output.createdTasks) ? output.createdTasks.length : 0;
+    return `${agentName} created ${n} open diligence task${n === 1 ? "" : "s"}`;
+  }
+  if (kind === "thesis_screen") {
+    const fit = output.fitScore;
+    const rec = output.recommendation;
+    if (fit != null && rec) return `${agentName} scored ${fit}/100 → ${String(rec)}`;
+  }
+  return `${agentName} finished`;
 }
 
 /**
