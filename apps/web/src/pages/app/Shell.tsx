@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, useOutlet, useLocation, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cx, Avatar } from "../../components/ui";
 import { ThemeToggle, useTheme } from "../../lib/theme";
 import {
@@ -61,6 +61,7 @@ export default function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const qc = useQueryClient();
   const isAssistantRoute = location.pathname === "/app";
   const isWorkflowsRoute = location.pathname === "/app/workflows";
   const isFullBleed = isAssistantRoute || isWorkflowsRoute;
@@ -69,7 +70,11 @@ export default function AppShell() {
   const [paletteFilter, setPaletteFilter] = useState<SearchFilter>("all");
   const { dark, toggle } = useTheme();
 
-  const meQ = useQuery({ queryKey: ["me"], queryFn: () => api.get<Me>("/me") });
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api.get<Me>("/me"),
+    staleTime: 2 * 60_000,
+  });
   const ws = meQ.data?.workspace;
   const self = ws?.members.find((m) => m.id === meQ.data?.actor.userId);
   const owner = ws?.members.find((m) => m.role === "owner");
@@ -83,6 +88,21 @@ export default function AppShell() {
   useEffect(() => {
     if (ws?.slug) rememberWorkspaceSlug(ws.slug);
   }, [ws?.slug]);
+
+  // Warm the board cache so Pipeline doesn't cold-start every visit.
+  useEffect(() => {
+    if (!ws?.id) return;
+    void qc.prefetchQuery({
+      queryKey: ["pipelines"],
+      queryFn: () => api.get("/pipelines"),
+      staleTime: 5 * 60_000,
+    });
+    void qc.prefetchQuery({
+      queryKey: ["deals", "", null],
+      queryFn: () => api.get("/deals?limit=500&archived=false"),
+      staleTime: 60_000,
+    });
+  }, [ws?.id, qc]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

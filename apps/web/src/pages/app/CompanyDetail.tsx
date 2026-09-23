@@ -120,13 +120,11 @@ export default function CompanyDetail() {
     queryKey: ["notes", id],
     queryFn: () => api.get<Note[]>(`/notes?companyId=${id}`),
     enabled: !!id,
-    refetchInterval: 5000,
   });
   const activityQ = useQuery({
     queryKey: ["activity", id],
     queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${id}&limit=30`),
     enabled: !!id,
-    refetchInterval: 5000,
   });
   const allCompaniesQ = useQuery({
     queryKey: ["companies-all"],
@@ -559,19 +557,16 @@ function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
   const activityQ = useQuery({
     queryKey: ["activity", companyId],
     queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${companyId}&limit=30`),
-    refetchInterval: 4000,
   });
   const spacesQ = useQuery({
     queryKey: ["spaces"],
     queryFn: () => api.get<SpaceSummary[]>("/spaces"),
-    refetchInterval: 4000,
   });
   const space = (spacesQ.data ?? []).find((s) => s.companyId === companyId);
   const tasksQ = useQuery({
     queryKey: ["tasks", space?.id],
     queryFn: () => api.get<{ items: TaskItem[] }>(`/tasks?spaceId=${space!.id}&status=open&limit=20`),
     enabled: !!space?.id,
-    refetchInterval: 4000,
   });
 
   const fromTasks = tasksQ.data?.items ?? [];

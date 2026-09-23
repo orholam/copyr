@@ -11,6 +11,9 @@ export const realtimeEventSchema = z.object({
   workspaceId: z.string(),
   entityType: z.string(),
   entityId: z.string(),
+  /** denormalised linkage so deal consumers can resolve the company without a follow-up fetch */
+  companyId: z.string().nullable().optional(),
+  dealId: z.string().nullable().optional(),
   type: z.string(),
   actor: activityActorSchema,
   summary: z.string(),

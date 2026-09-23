@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -148,10 +148,11 @@ function BoardCard({
       {...attributes}
       {...listeners}
       data-deal-card={deal.id}
+      data-company-id={deal.companyId}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
       className={cx(
-        "relative cursor-pointer touch-none select-none rounded-xl bg-white p-3 shadow-[0_1px_2px_rgba(23,22,19,0.05)] outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-brand-500/40",
+        "group relative cursor-pointer touch-none select-none rounded-xl bg-white p-3 shadow-[0_1px_2px_rgba(23,22,19,0.05)] outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-brand-500/40",
         interactive !== false && !isDragging && "hover:-translate-y-px hover:shadow-[0_10px_24px_-10px_rgba(23,22,19,0.22)]",
         isDragging ? "opacity-40 saturate-50" : "opacity-100",
       )}
@@ -160,6 +161,15 @@ function BoardCard({
         <span aria-hidden className="absolute inset-x-1 -top-[4px] h-[2px] rounded-full bg-brand-500" />
       )}
       <CardBody deal={deal} />
+      <Link
+        to={`/app/companies/${deal.companyId}`}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="mt-2.5 flex items-center gap-1 text-[11px] font-semibold text-brand-700 opacity-0 transition-opacity hover:text-brand-800 hover:underline group-hover:opacity-100 focus-visible:opacity-100"
+        title="Open company page — the deal card and company are the same record"
+      >
+        Company page →
+      </Link>
     </div>
   );
 }
@@ -233,7 +243,11 @@ export default function Pipeline() {
     );
   };
 
-  const pipelinesQ = useQuery({ queryKey: ["pipelines"], queryFn: () => api.get<Pipeline[]>("/pipelines") });
+  const pipelinesQ = useQuery({
+    queryKey: ["pipelines"],
+    queryFn: () => api.get<Pipeline[]>("/pipelines"),
+    staleTime: 5 * 60_000,
+  });
   const pipeline = pipelinesQ.data?.find((p) => p.isDefault) ?? pipelinesQ.data?.[0];
 
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -250,14 +264,17 @@ export default function Pipeline() {
     mutationFn: (vid: string) => api.delete(`/views/${vid}`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["saved-views"] }),
   });
+  const dealsKey = ["deals", q, tagFilter] as const;
   const dealsQ = useQuery({
-    queryKey: ["deals", q, tagFilter],
+    queryKey: dealsKey,
     queryFn: () =>
       api.get<{ items: Deal[]; total: number }>(
         `/deals?limit=500&archived=false` +
           `${q ? `&q=${encodeURIComponent(q)}` : ""}` +
           `${tagFilter ? `&tags=${encodeURIComponent(tagFilter)}` : ""}`,
       ),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
   });
 
   const stageIds = useMemo(() => new Set((pipeline?.stages ?? []).map((s) => s.id)), [pipeline]);
@@ -274,25 +291,30 @@ export default function Pipeline() {
     };
   }, [stageIds]);
 
-  // Optimistically apply the move to the deals cache so the card lands instantly;
-  // rolled back if the server rejects the move.
+  // Optimistically apply the move to every cached deals list so the card lands
+  // instantly; rolled back if the server rejects the move.
   const move = useMutation({
     mutationFn: (input: { id: string; stageId: string; beforeDealId?: string | null }) =>
       api.post(`/deals/${input.id}/move`, { stageId: input.stageId, beforeDealId: input.beforeDealId ?? null }),
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: ["deals"] });
-      const key = ["deals", q];
-      const prev = qc.getQueryData<{ items: Deal[]; total: number }>(key);
-      if (prev) {
-        qc.setQueryData(key, { ...prev, items: reorderDeals(prev.items, input) });
-        return { prev };
-      }
-      return undefined;
+      const snapshots = qc.getQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] });
+      qc.setQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] }, (old) => {
+        if (!old?.items) return old;
+        return { ...old, items: reorderDeals(old.items, input) };
+      });
+      return { snapshots };
     },
     onError: (_err, _input, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["deals", q], ctx.prev);
+      for (const [key, data] of ctx?.snapshots ?? []) {
+        if (data) qc.setQueryData(key, data);
+      }
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["deals"] }),
+    // Background reconcile — keep showing optimistic data (no loading flash).
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      void qc.invalidateQueries({ queryKey: ["deal"] });
+    },
   });
 
   const onDragStart = (e: DragStartEvent) => {
@@ -316,12 +338,10 @@ export default function Pipeline() {
 
   const onDragEnd = (e: DragEndEvent) => {
     lastDrag.current = Date.now();
-    clearDrag();
     const overId = e.over?.id == null ? null : String(e.over.id);
-    if (!overId || overId === e.active.id) return;
-
-    const active = dealsQ.data?.items.find((d) => d.id === e.active.id);
-    if (!active) return;
+    const active = dealsQ.data?.items.find((d) => d.id === e.active.id) ?? activeDeal;
+    clearDrag();
+    if (!overId || !active || overId === active.id) return;
 
     if (stageIds.has(overId)) {
       if (overId !== active.stageId)
@@ -345,7 +365,7 @@ export default function Pipeline() {
     return map;
   }, [dealsQ.data, pipeline]);
 
-  const loading = pipelinesQ.isLoading || dealsQ.isLoading;
+  const loading = (pipelinesQ.isLoading && !pipelinesQ.data) || (dealsQ.isLoading && !dealsQ.data);
 
   const updateScrollHints = useCallback(() => {
     const el = boardRef.current;
@@ -616,7 +636,14 @@ export default function Pipeline() {
                       <div className="flex items-center gap-3">
                         <Avatar name={deal.company.name} size={28} />
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold leading-5 text-paper-900">{deal.company.name}</p>
+                          <Link
+                            to={`/app/companies/${deal.companyId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="truncate text-sm font-semibold leading-5 text-paper-900 hover:text-brand-700 hover:underline"
+                            title="Open company page"
+                          >
+                            {deal.company.name}
+                          </Link>
                           {deal.company.domain && <p className="truncate text-xs font-medium leading-4 text-paper-400">{deal.company.domain}</p>}
                         </div>
                       </div>

@@ -123,7 +123,32 @@ export function DealDrawer() {
 
   const moveStage = useMutation({
     mutationFn: (stageId: string) => api.patch(`/deals/${dealId}`, { stageId }),
-    onSuccess: invalidate,
+    onMutate: async (stageId) => {
+      await qc.cancelQueries({ queryKey: ["deal", dealId] });
+      await qc.cancelQueries({ queryKey: ["deals"] });
+      const prevDeal = qc.getQueryData<Deal>(["deal", dealId]);
+      if (prevDeal) qc.setQueryData(["deal", dealId], { ...prevDeal, stageId });
+      const snapshots = qc.getQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] });
+      qc.setQueriesData<{ items: Array<{ id: string; stageId: string }> }>({ queryKey: ["deals"] }, (old) => {
+        if (!old?.items || !dealId) return old;
+        return {
+          ...old,
+          items: old.items.map((d) => (d.id === dealId ? { ...d, stageId } : d)),
+        };
+      });
+      return { prevDeal, snapshots };
+    },
+    onError: (_e, _stageId, ctx) => {
+      if (ctx?.prevDeal) qc.setQueryData(["deal", dealId], ctx.prevDeal);
+      for (const [key, data] of ctx?.snapshots ?? []) {
+        if (data) qc.setQueryData(key, data);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      void qc.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
   const addNote = useMutation({
     mutationFn: (body: string) => api.post("/notes", { dealId, body }),
@@ -176,6 +201,13 @@ export function DealDrawer() {
                   <p className="mt-0.5 truncate text-[13px] font-medium text-paper-600">
                     {[deal.company.sector, deal.company.location].filter(Boolean).join(" · ") || deal.title}
                   </p>
+                  <Link
+                    to={`/app/companies/${deal.company.id}`}
+                    onClick={close}
+                    className="mt-1 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-800 hover:underline"
+                  >
+                    Open company page →
+                  </Link>
                 </div>
                 <button
                   onClick={close}
@@ -193,7 +225,6 @@ export function DealDrawer() {
                   return (
                     <button
                       key={s.id}
-                      disabled={moveStage.isPending}
                       onClick={() => moveStage.mutate(s.id)}
                       className={cx(
                         "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all",

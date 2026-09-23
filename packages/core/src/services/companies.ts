@@ -402,11 +402,26 @@ export async function mergeCompany(
       entityType: "company",
       entityId: into.id,
       companyId: into.id,
+      dealId: into.id,
       type: "company.merged",
       summary: `${from.name} merged into ${into.name}`,
       actor: session.actor.userId ? "user" : "system",
       actorUserId: session.actor.userId,
-      data: { fromCompanyId: from.id },
+      data: { fromCompanyId: from.id, fromCompanyName: from.name },
+    });
+    // archived source: consumers watching deal.* need a deal-level event so
+    // the vanished pipeline card can be removed without polling
+    await logActivity(ctx, tx, {
+      workspaceId: session.workspaceId,
+      entityType: "deal",
+      entityId: from.id,
+      companyId: from.id,
+      dealId: from.id,
+      type: "deal.archived",
+      summary: `Deal "${from.name}" archived (merged into ${into.name})`,
+      actor: session.actor.userId ? "user" : "system",
+      actorUserId: session.actor.userId,
+      data: { mergedIntoCompanyId: into.id, mergedIntoCompanyName: into.name },
     });
 
     return getCompany(ctx, session, into.id);

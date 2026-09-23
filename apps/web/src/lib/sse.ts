@@ -13,6 +13,17 @@ type PresenceListener = (msg: {
 
 const presenceListeners = new Set<PresenceListener>();
 
+/** Debounce board invalidations so optimistic drag UI isn't overwritten mid-flight. */
+let dealsInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
+function invalidateDealsSoon(client: QueryClient) {
+  if (dealsInvalidateTimer) clearTimeout(dealsInvalidateTimer);
+  dealsInvalidateTimer = setTimeout(() => {
+    dealsInvalidateTimer = null;
+    void client.invalidateQueries({ queryKey: ["deals"] });
+    void client.invalidateQueries({ queryKey: ["deal"] });
+  }, 350);
+}
+
 /** Subscribe to live viewer presence across the app. */
 export function onPresence(fn: PresenceListener): () => void {
   presenceListeners.add(fn);
@@ -29,13 +40,13 @@ function dispatchActivity(client: QueryClient, data: { entityType: string; type:
     return;
   }
   const map: Record<string, string[][]> = {
-    deal: [["deals"], ["deal"], ["activity"], ["notes"]],
+    deal: [["activity"], ["notes"]],
     company: [["companies"], ["company"], ["activity"], ["notes"], ["spaces"], ["tasks"]],
     email: [["emails"]],
     document: [["documents"]],
     note: [["notes"], ["activity"]],
     portfolio_update: [["portfolio"]],
-    stage: [["pipelines"], ["deals"], ["activity"]],
+    stage: [["pipelines"], ["activity"]],
     activity: [["activity"]],
     // agent / workflow runs land on the company timeline + diligence side panel
     agent_run: [["activity"], ["notes"], ["spaces"], ["tasks"], ["automations-overview"]],
@@ -47,6 +58,9 @@ function dispatchActivity(client: QueryClient, data: { entityType: string; type:
     for (const key of keys) {
       void client.invalidateQueries({ queryKey: [key] });
     }
+  }
+  if (data.entityType === "deal" || data.entityType === "stage") {
+    invalidateDealsSoon(client);
   }
   // Always refresh the automations overview on AI work so Agents → Runs stays live
   if (data.type?.startsWith("agent_run") || data.type?.startsWith("workflow")) {

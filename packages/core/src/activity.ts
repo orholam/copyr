@@ -72,6 +72,8 @@ export async function logActivity(
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
+    companyId: input.companyId ?? null,
+    dealId: input.dealId ?? null,
     type: input.type,
     actor: input.actor,
     summary: input.summary,

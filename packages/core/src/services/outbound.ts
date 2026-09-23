@@ -167,6 +167,9 @@ export async function dispatchEventToWebhooks(
       workspaceId: event.workspaceId,
       entityType: event.entityType,
       entityId: event.entityId,
+      // denormalised linkage: deal → company without an extra fetch
+      companyId: (event as { companyId?: string | null }).companyId ?? null,
+      dealId: (event as { dealId?: string | null }).dealId ?? null,
       actor: event.actor,
       summary: event.summary,
       data: event.data,

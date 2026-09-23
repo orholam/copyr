@@ -227,6 +227,12 @@ export const createDealSchema = z.object({
   companyName: z.string().min(1).optional(),
   /** Alias of companyName — models often pass `name` like create_company. */
   name: z.string().min(1).optional(),
+  domain: z.string().max(200).optional(),
+  website: z.string().max(300).optional(),
+  description: z.string().max(2000).optional(),
+  sector: z.string().max(100).optional(),
+  location: z.string().max(200).optional(),
+  linkedinUrl: z.string().url().optional(),
   pipelineId: idSchema.optional(),
   stageId: idSchema.optional(),
   ownerUserId: idSchema.nullable().optional(),
