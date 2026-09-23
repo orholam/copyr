@@ -11,3 +11,5 @@ data/
 
 # Separate GitHub repo: orholam/vc_intelligence
 intelligence/
+artifacts/
+apps/web/.env.local

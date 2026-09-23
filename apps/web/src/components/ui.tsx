@@ -125,13 +125,21 @@ export function Modal({
   subtitle,
   children,
   wide,
+  size = "md",
+  bodyClassName,
+  bare,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
   children: ReactNode;
+  /** @deprecated prefer size="lg" */
   wide?: boolean;
+  size?: "md" | "lg" | "canvas";
+  bodyClassName?: string;
+  /** Skip title chrome — child owns the chrome (used by full-bleed canvas editors). */
+  bare?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -145,34 +153,54 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
+  const resolved = size === "md" && wide ? "lg" : size;
   // Portal to body: pages keep a lingering transform (animate-fade-up), which
   // would otherwise become the containing block for this fixed overlay.
   return createPortal(
     <div
-      className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-paper-900/25 p-4 pt-[11vh] backdrop-blur-[2px] dark:bg-black/60"
+      className={cx(
+        "animate-fade-in fixed inset-0 z-50 flex justify-center bg-paper-900/30 backdrop-blur-[2px] dark:bg-black/60",
+        resolved === "canvas"
+          ? "items-stretch p-0 sm:p-2"
+          : "items-start overflow-y-auto p-4 pt-[11vh]",
+      )}
       onMouseDown={onClose}
     >
       <div
         className={cx(
-          "animate-pop flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-xl border border-paper-900/[0.13] bg-white shadow-pop",
-          wide ? "max-w-[620px]" : "max-w-md",
+          "animate-pop flex w-full flex-col overflow-hidden border border-paper-900/[0.13] bg-white shadow-pop",
+          resolved === "canvas"
+            ? "h-full max-h-none max-w-none rounded-none sm:rounded-xl"
+            : resolved === "lg"
+              ? "max-h-[85dvh] max-w-[620px] rounded-xl"
+              : "max-h-[85dvh] max-w-md rounded-xl",
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-paper-900/[0.08] bg-paper-100/60 px-4 py-3">
-          <div>
-            <h2 className="text-[13.5px] font-semibold leading-5 tracking-tight text-paper-900">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-paper-500">{subtitle}</p>}
+        {!bare && (
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-paper-900/[0.08] bg-paper-100/60 px-4 py-3">
+            <div>
+              <h2 className="text-[13.5px] font-semibold leading-5 tracking-tight text-paper-900">{title}</h2>
+              {subtitle && <p className="mt-0.5 text-xs text-paper-500">{subtitle}</p>}
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="-mr-1 -mt-1 rounded-md p-1 text-paper-400 transition hover:bg-paper-900/[0.06] hover:text-paper-900"
+            >
+              <IconX width={14} height={14} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="-mr-1 -mt-1 rounded-md p-1 text-paper-400 transition hover:bg-paper-900/[0.06] hover:text-paper-900"
-          >
-            <IconX width={14} height={14} />
-          </button>
+        )}
+        <div
+          className={cx(
+            "min-h-0 flex-1",
+            resolved === "canvas" ? "flex flex-col overflow-hidden p-0" : "overflow-y-auto p-4",
+            bodyClassName,
+          )}
+        >
+          {children}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
       </div>
     </div>,
     document.body,

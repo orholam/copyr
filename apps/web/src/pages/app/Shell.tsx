@@ -44,8 +44,9 @@ const NAV = [
   {
     section: "Automation",
     items: [
-      { to: "/app/automations", label: "Automations", icon: IconBot },
-      { to: "/app/command-center", label: "Command Center", icon: IconLayers },
+      { to: "/app/workflows", label: "Workflows", icon: IconLayers },
+      { to: "/app/automations", label: "Agents", icon: IconBot },
+      { to: "/app/command-center", label: "Command Center", icon: IconChart },
     ],
   },
 ];
@@ -61,6 +62,8 @@ export default function AppShell() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const isAssistantRoute = location.pathname === "/app";
+  const isWorkflowsRoute = location.pathname === "/app/workflows";
+  const isFullBleed = isAssistantRoute || isWorkflowsRoute;
   const [showAdd, setShowAdd] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState<SearchFilter>("all");
@@ -259,8 +262,8 @@ export default function AppShell() {
           </span>
         </div>
 
-        {/* The Assistant is the app's home surface — full-bleed, no page container */}
-        {isAssistantRoute ? (
+        {/* Assistant + Workflows are immersive full-bleed surfaces */}
+        {isFullBleed ? (
           <div className="min-h-0 flex-1">{outlet}</div>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">

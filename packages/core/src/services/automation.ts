@@ -247,16 +247,17 @@ async function buildSnapshot(
     switch (ev.entityType) {
       case "deal": {
         const deal = await dealsSvc.getDeal(ctx, { workspaceId, actor: { userId: null, source: "api" } }, ev.entityId);
-        snap["deal"] = { ...deal };
+        snap["deal"] = await withStageName(ctx, deal);
         snap["company"] = deal.company;
         break;
       }
       case "company": {
-        snap["company"] = await companiesSvc.getCompany(
+        const company = await companiesSvc.getCompany(
           ctx,
           { workspaceId, actor: { userId: null, source: "api" } },
           ev.entityId,
         );
+        snap["company"] = await withStageName(ctx, company);
         break;
       }
       case "email": {
@@ -294,7 +295,8 @@ async function buildSnapshot(
         const dealScopeId = run.dealId ?? run.companyId;
         if (dealScopeId) {
           try {
-            snap["deal"] = await dealsSvc.getDeal(ctx, { workspaceId, actor: { userId: null, source: "api" } }, dealScopeId);
+            const deal = await dealsSvc.getDeal(ctx, { workspaceId, actor: { userId: null, source: "api" } }, dealScopeId);
+            snap["deal"] = await withStageName(ctx, deal);
           } catch {
             // deal gone — conditions on deal paths simply fail
           }
@@ -308,6 +310,20 @@ async function buildSnapshot(
     // entity deleted mid-flight — empty snapshot, `exists` conditions fail
   }
   return snap;
+}
+
+/** Attach `stageName` so conditions can gate on "Due Diligence" instead of opaque UUIDs. */
+async function withStageName<T extends { stageId?: string | null }>(
+  ctx: CoreContext,
+  entity: T,
+): Promise<T & { stageName: string | null }> {
+  if (!entity.stageId) return { ...entity, stageName: null };
+  const [row] = await ctx.db
+    .select({ name: stagesT.name })
+    .from(stagesT)
+    .where(eq(stagesT.id, entity.stageId))
+    .limit(1);
+  return { ...entity, stageName: row?.name ?? null };
 }
 
 function interpolate(template: string, snapshot: Snapshot): string {

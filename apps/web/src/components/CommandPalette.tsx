@@ -63,11 +63,14 @@ export function CommandPalette({
     const out: Item[] = [];
     if (!q.trim()) {
       const dests: Array<[string, string]> = [
-        ["Dashboard", "/app"],
+        ["Dashboard", "/app/dashboard"],
         ["Pipeline", "/app/pipeline"],
         ["Inbox", "/app/inbox"],
+        ["Workflows", "/app/workflows"],
+        ["Agents", "/app/automations"],
         ["Portfolio", "/app/portfolio"],
         ["Analytics", "/app/analytics"],
+        ["Command Center", "/app/command-center"],
         ["Settings", "/app/settings"],
       ];
       if (filter === "all")

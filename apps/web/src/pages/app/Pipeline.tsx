@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -454,6 +454,13 @@ export default function Pipeline() {
                 { value: "table", label: "Table" },
               ]}
             />
+            <Link
+              to="/app/workflows"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
+              title="Automate stage moves and screens"
+            >
+              Workflows
+            </Link>
             <Button size="sm" onClick={() => window.dispatchEvent(new Event("copyr:add-company"))}>
               <IconPlus width={13} height={13} /> New deal
             </Button>

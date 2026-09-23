@@ -9,6 +9,7 @@ import {
 import {
   IconArrowUpRight, IconBot, IconDoc, IconMapPin, IconSpark, IconUser,
 } from "../../components/icons";
+import { WorkflowEditorModal } from "./WorkflowEditorModal";
 
 interface Company {
   id: string;
@@ -356,6 +357,7 @@ export default function CompanyDetail() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20">
+          <CompanyWorkflowsStrip companyName={c.name} />
           <div className="panel p-3.5">
             <h2 className="mb-3 text-[13px] font-medium text-paper-800">Contacts</h2>
             {contactsQ.data?.length ? (
@@ -448,8 +450,73 @@ function Meta({ label, value, accent }: { label: string; value: string; accent?:
       <p className={cx("num mt-0.5 text-[13px] font-medium", accent ? "text-brand-700" : "text-paper-900")}>{value}</p>
     </div>
   );
-
 }
+
+/** Workflows that fire on company/deal events — opens the shared canvas editor. */
+function CompanyWorkflowsStrip({ companyName }: { companyName: string }) {
+  const [open, setOpen] = useState(false);
+  const overviewQ = useQuery({
+    queryKey: ["automations-overview"],
+    queryFn: () =>
+      api.get<{
+        workflows: Array<{
+          id: string;
+          name: string;
+          triggerEvent: string;
+          isEnabled: boolean;
+        }>;
+      }>("/automations/overview"),
+  });
+  const relevant = (overviewQ.data?.workflows ?? []).filter((w) =>
+    w.triggerEvent.startsWith("company.") ||
+    w.triggerEvent.startsWith("deal.") ||
+    w.triggerEvent === "agent_run.completed",
+  );
+
+  return (
+    <div className="panel p-3.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
+          <IconBot width={13} height={13} /> Workflows
+        </h2>
+        <Link to="/app/workflows" className="text-[11px] font-medium text-brand-700 hover:underline">
+          All
+        </Link>
+      </div>
+      {relevant.length ? (
+        <ul className="mb-2 space-y-1.5">
+          {relevant.slice(0, 4).map((w) => (
+            <li key={w.id} className="flex items-center justify-between gap-2 text-[12px]">
+              <span className="truncate text-paper-800">{w.name}</span>
+              <Badge tone={w.isEnabled ? "green" : "slate"}>{w.isEnabled ? "on" : "off"}</Badge>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-2 text-[12px] text-paper-500">No company/deal workflows yet.</p>
+      )}
+      <Button
+        size="xs"
+        variant="outline"
+        className="w-full"
+        onClick={() => setOpen(true)}
+      >
+        Automate inbound like {companyName.split(" ")[0]}…
+      </Button>
+      {open && (
+        <WorkflowEditorModal
+          preset={{
+            name: `Screen ${companyName}`,
+            triggerEvent: "company.created",
+            description: `When a company like ${companyName} is added, run Thesis Screener.`,
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ── share links panel (Roulette "share deals, not your whole CRM") ── */
 
 interface ShareLink {

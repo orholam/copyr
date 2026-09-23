@@ -121,8 +121,83 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
 }
 
 /**
- * Wire Thesis Screener into inbound deal flow so automations work out of the
- * box (idempotent by workflow name).
+ * Real VC use-case workflows every workspace gets out of the box
+ * (idempotent by name — missing ones are added, existing names left alone).
+ */
+export const DEFAULT_WORKFLOW_SPECS: Array<{
+  name: string;
+  description: string;
+  triggerEvent:
+    | "company.created"
+    | "agent_run.completed"
+    | "deal.stage_changed"
+    | "deal.created";
+  conditions: Array<{ field: string; op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists"; value?: unknown }>;
+  actions: Array<{
+    type: "add_note" | "move_deal" | "set_deal_fields" | "set_company_fields" | "create_portfolio_update" | "run_agent";
+    config: Record<string, unknown>;
+  }>;
+  isEnabled: boolean;
+}> = [
+  {
+    name: "Screen new companies",
+    description: "When a company lands in the pipeline, run Thesis Screener for an advance / watch / pass call.",
+    triggerEvent: "company.created",
+    conditions: [],
+    actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
+    isEnabled: true,
+  },
+  {
+    name: "Promote advancing screens",
+    description: "When Thesis Screener says advance, stamp High conviction, move to Initial Review, and brief the team.",
+    triggerEvent: "agent_run.completed",
+    conditions: [{ field: "output.recommendation", op: "eq", value: "advance" }],
+    actions: [
+      { type: "set_deal_fields", config: { fields: { conviction: "High" } } },
+      { type: "move_deal", config: { stageName: "Initial Review" } },
+      {
+        type: "add_note",
+        config: {
+          body: "{{agent.name}} scored {{output.fitScore}}/100 (advance) on {{company.name}} — flagged for partner attention.",
+        },
+      },
+    ],
+    isEnabled: true,
+  },
+  {
+    name: "File pass recommendations",
+    description: "When Thesis Screener says pass, move the deal to Passed and leave a short rationale note.",
+    triggerEvent: "agent_run.completed",
+    conditions: [{ field: "output.recommendation", op: "eq", value: "pass" }],
+    actions: [
+      { type: "move_deal", config: { stageName: "Passed" } },
+      {
+        type: "add_note",
+        config: {
+          body: "{{agent.name}} recommended pass on {{company.name}} ({{output.fitScore}}/100). Auto-filed to Passed.",
+        },
+      },
+    ],
+    isEnabled: true,
+  },
+  {
+    name: "Diligence kickoff",
+    description: "When a deal enters Due Diligence, provision the standard checklist so nothing is missed.",
+    triggerEvent: "deal.stage_changed",
+    conditions: [{ field: "deal.stageName", op: "eq", value: "Due Diligence" }],
+    actions: [
+      { type: "run_agent", config: { agentName: "Diligence Checklist Builder" } },
+      {
+        type: "add_note",
+        config: { body: "Diligence Checklist Builder spun up the standard checklist for {{company.name}}." },
+      },
+    ],
+    isEnabled: true,
+  },
+];
+
+/**
+ * Install the default use-case workflows (idempotent by workflow name).
  */
 export async function ensureDefaultAgentWorkflows(
   ctx: CoreContext,
@@ -132,17 +207,20 @@ export async function ensureDefaultAgentWorkflows(
     .select({ name: workflows.name })
     .from(workflows)
     .where(eq(workflows.workspaceId, workspaceId));
-  if (existing.some((w) => w.name === "Screen new companies")) return;
+  const have = new Set(existing.map((e) => e.name));
 
-  await ctx.db.insert(workflows).values({
-    workspaceId,
-    name: "Screen new companies",
-    description: "Runs Thesis Screener whenever a company is added to the pipeline.",
-    triggerEvent: "company.created",
-    conditions: [],
-    actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
-    isEnabled: true,
-  });
+  for (const spec of DEFAULT_WORKFLOW_SPECS) {
+    if (have.has(spec.name)) continue;
+    await ctx.db.insert(workflows).values({
+      workspaceId,
+      name: spec.name,
+      description: spec.description,
+      triggerEvent: spec.triggerEvent,
+      conditions: spec.conditions,
+      actions: spec.actions,
+      isEnabled: spec.isEnabled,
+    });
+  }
 }
 
 export async function listAgents(ctx: CoreContext, session: Session): Promise<AgentDto[]> {
