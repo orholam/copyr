@@ -31,6 +31,10 @@ import { startWorkers } from "./jobs/index.js";
 export interface Core {
   ctx: CoreContext;
   db: Database;
+  /** True when this process constructed a pg-boss client (may still be starting). */
+  workersEnabled: boolean;
+  /** True after startWorkers() has registered queues and handlers. */
+  workersStarted: boolean;
   /** begin accepting jobs (call once per process) */
   startWorkers(): Promise<void>;
   close(): Promise<void>;
@@ -94,9 +98,12 @@ export async function createCore(opts?: {
   const core: Core = {
     ctx,
     db,
+    workersEnabled: Boolean(boss),
+    workersStarted: false,
     async startWorkers() {
       if (!boss) throw new Error("workers disabled for this instance");
       await startWorkers(ctx, boss, config.JOB_CONCURRENCY);
+      core.workersStarted = true;
     },
     async close() {
       await boss?.stop();

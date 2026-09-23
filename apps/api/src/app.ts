@@ -210,7 +210,15 @@ export async function buildApp(opts: { core?: Core } = {}) {
   await registerSse(app, core);
 
   // health
-  app.get("/health", async () => ({ ok: true, ts: new Date().toISOString() }));
+  app.get("/health", async () => ({
+    ok: true,
+    ts: new Date().toISOString(),
+    workers: {
+      enabled: core.workersEnabled,
+      started: core.workersStarted,
+    },
+    aiProvider: config.AI_PROVIDER,
+  }));
 
   // serve built SPA in production
   if (config.NODE_ENV === "production") {

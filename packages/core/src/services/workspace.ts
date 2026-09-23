@@ -163,6 +163,7 @@ export async function ensureUserWorkspace(
   if (preferredSlug) {
     const preferred = memberRows.find((m) => m.slug === preferredSlug);
     if (preferred) {
+      await ensureSystemAgents(ctx, preferred.workspaceId).catch(() => undefined);
       return {
         workspaceId: preferred.workspaceId,
         workspaceSlug: preferred.slug,
@@ -173,6 +174,7 @@ export async function ensureUserWorkspace(
 
   if (memberRows.length > 0) {
     const chosen = memberRows.find((m) => m.role === "owner") ?? memberRows[0]!;
+    await ensureSystemAgents(ctx, chosen.workspaceId).catch(() => undefined);
     return {
       workspaceId: chosen.workspaceId,
       workspaceSlug: chosen.slug,

@@ -309,7 +309,16 @@ export async function startWorkers(ctx: CoreContext, boss: PgBoss, concurrency: 
     try {
       const event = JSON.parse(payload) as { workspaceId: string; data?: Record<string, unknown> };
       if ((event.data as Record<string, unknown> | undefined)?.__wf) return; // workflow-originated
-      void ctx.enqueue("run-workflows", { event });
+      void (async () => {
+        const jobId = await ctx.enqueue("run-workflows", { event });
+        // No pg-boss (or send failed) — evaluate inline so automations still fire.
+        if (!jobId) {
+          const { evaluateWorkflowsForEvent } = await import("../services/automation.js");
+          await evaluateWorkflowsForEvent(ctx, event as never).catch((err) => {
+            console.error("[run-workflows-inline]", err instanceof Error ? err.message : err);
+          });
+        }
+      })();
       void import("../services/outbound.js").then((m) =>
         m.dispatchEventToWebhooks(ctx, event as never).catch(() => undefined),
       );
