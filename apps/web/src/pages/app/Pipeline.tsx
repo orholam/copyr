@@ -154,7 +154,7 @@ function BoardCard({
       className={cx(
         "group relative cursor-pointer touch-none select-none rounded-xl bg-white p-3 shadow-[0_1px_2px_rgba(23,22,19,0.05)] outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-brand-500/40",
         interactive !== false && !isDragging && "hover:-translate-y-px hover:shadow-[0_10px_24px_-10px_rgba(23,22,19,0.22)]",
-        isDragging ? "opacity-40 saturate-50" : "opacity-100",
+        isDragging ? "invisible" : "opacity-100",
       )}
     >
       {isOver && (
@@ -226,6 +226,10 @@ export default function Pipeline() {
   );
   const [activeDeal, setActiveDeal] = useState<Deal | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
+  /** Local pending moves — applied immediately on drop so UI never waits on async cache work. */
+  const [pendingMoves, setPendingMoves] = useState<
+    Record<string, { stageId: string; beforeDealId?: string | null }>
+  >({});
   const lastDrag = useRef(0);
   const boardRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -291,26 +295,41 @@ export default function Pipeline() {
     };
   }, [stageIds]);
 
-  // Optimistically apply the move to every cached deals list so the card lands
-  // instantly; rolled back if the server rejects the move.
+  // Optimistically apply the move so the card lands instantly; roll back only if
+  // the server rejects. Cache write is synchronous — never await before it.
   const move = useMutation({
     mutationFn: (input: { id: string; stageId: string; beforeDealId?: string | null }) =>
       api.post(`/deals/${input.id}/move`, { stageId: input.stageId, beforeDealId: input.beforeDealId ?? null }),
-    onMutate: async (input) => {
-      await qc.cancelQueries({ queryKey: ["deals"] });
+    onMutate: (input) => {
       const snapshots = qc.getQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] });
       qc.setQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] }, (old) => {
         if (!old?.items) return old;
         return { ...old, items: reorderDeals(old.items, input) };
       });
-      return { snapshots };
+      // Cancel stale refetches after the optimistic write so they can't race ahead of paint.
+      void qc.cancelQueries({ queryKey: ["deals"] });
+      return { snapshots, id: input.id };
     },
     onError: (_err, _input, ctx) => {
       for (const [key, data] of ctx?.snapshots ?? []) {
         if (data) qc.setQueryData(key, data);
       }
+      if (ctx?.id) {
+        setPendingMoves((prev) => {
+          const next = { ...prev };
+          delete next[ctx.id];
+          return next;
+        });
+      }
     },
-    // Background reconcile — keep showing optimistic data (no loading flash).
+    onSuccess: (_data, input) => {
+      setPendingMoves((prev) => {
+        const next = { ...prev };
+        delete next[input.id];
+        return next;
+      });
+    },
+    // Soft reconcile in the background — do not clear optimistic UI.
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["deals"] });
       void qc.invalidateQueries({ queryKey: ["deal"] });
@@ -340,17 +359,23 @@ export default function Pipeline() {
     lastDrag.current = Date.now();
     const overId = e.over?.id == null ? null : String(e.over.id);
     const active = dealsQ.data?.items.find((d) => d.id === e.active.id) ?? activeDeal;
-    clearDrag();
-    if (!overId || !active || overId === active.id) return;
 
-    if (stageIds.has(overId)) {
-      if (overId !== active.stageId)
-        move.mutate({ id: active.id, stageId: overId });
-      return;
+    let nextMove: { id: string; stageId: string; beforeDealId?: string | null } | null = null;
+    if (active && overId && overId !== active.id) {
+      if (stageIds.has(overId)) {
+        if (overId !== active.stageId) nextMove = { id: active.id, stageId: overId };
+      } else {
+        const target = dealsQ.data?.items.find((d) => d.id === overId);
+        if (target) nextMove = { id: active.id, stageId: target.stageId, beforeDealId: target.id };
+      }
     }
-    const target = dealsQ.data?.items.find((d) => d.id === overId);
-    if (target)
-      move.mutate({ id: active.id, stageId: target.stageId, beforeDealId: target.id });
+
+    // Paint the destination column in the same frame as dropping the overlay.
+    if (nextMove) {
+      setPendingMoves((prev) => ({ ...prev, [nextMove!.id]: { stageId: nextMove!.stageId, beforeDealId: nextMove!.beforeDealId } }));
+      move.mutate(nextMove);
+    }
+    clearDrag();
   };
 
   const onDragCancel = (_e: DragCancelEvent) => {
@@ -358,12 +383,20 @@ export default function Pipeline() {
     clearDrag();
   };
 
+  const boardDeals = useMemo(() => {
+    let items = dealsQ.data?.items ?? [];
+    for (const [id, mv] of Object.entries(pendingMoves)) {
+      items = reorderDeals(items, { id, stageId: mv.stageId, beforeDealId: mv.beforeDealId });
+    }
+    return items;
+  }, [dealsQ.data, pendingMoves]);
+
   const byStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
     for (const s of pipeline?.stages ?? []) map.set(s.id, []);
-    for (const d of dealsQ.data?.items ?? []) map.get(d.stageId)?.push(d);
+    for (const d of boardDeals) map.get(d.stageId)?.push(d);
     return map;
-  }, [dealsQ.data, pipeline]);
+  }, [boardDeals, pipeline]);
 
   const loading = (pipelinesQ.isLoading && !pipelinesQ.data) || (dealsQ.isLoading && !dealsQ.data);
 
