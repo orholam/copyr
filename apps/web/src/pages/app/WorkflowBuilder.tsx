@@ -470,7 +470,7 @@ export function WorkflowBuilder({
 
         <div className="relative flex min-h-0 flex-1">
           {/* Palette — sits on the dots, no nested frame */}
-          <aside className="relative z-10 flex w-[168px] shrink-0 flex-col gap-3 overflow-y-auto border-r border-paper-900/[0.06] bg-white/55 p-2.5 backdrop-blur-md">
+          <aside className="relative z-10 flex w-[148px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-paper-900/[0.06] bg-white/55 p-2 backdrop-blur-md">
             <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-paper-400">
               Drag in
             </p>
@@ -490,11 +490,11 @@ export function WorkflowBuilder({
           <div
             ref={setCanvasRef}
             className={cx(
-              "relative min-w-0 flex-1 overflow-auto px-6 py-5 transition",
+              "relative min-w-0 flex-1 overflow-auto px-4 py-4 transition",
               canvasOver && "bg-brand-500/[0.03]",
             )}
           >
-            <div className="mx-auto flex w-full max-w-lg flex-col">
+            <div className="mx-auto flex w-full max-w-md flex-col">
               <NodeShell tone="when" title="when">
                 <select
                   className={`${nodeInput} w-full capitalize`}

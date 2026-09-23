@@ -161,7 +161,7 @@ export function Modal({
       className={cx(
         "animate-fade-in fixed inset-0 z-50 flex justify-center bg-paper-900/30 backdrop-blur-[2px] dark:bg-black/60",
         resolved === "canvas"
-          ? "items-stretch p-0 sm:p-2"
+          ? "items-center justify-center p-4 sm:p-6"
           : "items-start overflow-y-auto p-4 pt-[11vh]",
       )}
       onMouseDown={onClose}
@@ -170,7 +170,7 @@ export function Modal({
         className={cx(
           "animate-pop flex w-full flex-col overflow-hidden border border-paper-900/[0.13] bg-white shadow-pop",
           resolved === "canvas"
-            ? "h-full max-h-none max-w-none rounded-none sm:rounded-xl"
+            ? "h-[min(640px,88dvh)] max-w-[560px] rounded-xl"
             : resolved === "lg"
               ? "max-h-[85dvh] max-w-[620px] rounded-xl"
               : "max-h-[85dvh] max-w-md rounded-xl",

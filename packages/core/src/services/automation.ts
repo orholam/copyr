@@ -333,6 +333,25 @@ function interpolate(template: string, snapshot: Snapshot): string {
   });
 }
 
+function summarizeWorkflowRun(
+  name: string,
+  steps: StepResult[],
+  failed: boolean,
+): string {
+  const ok = steps.filter((s) => s.status === "ok");
+  const highlights = ok
+    .map((s) => {
+      if (s.type === "run_agent") return s.detail?.replace(/^dispatched\s+/i, "ran ") ?? "ran agent";
+      if (s.type === "move_deal") return s.detail ?? "moved deal";
+      if (s.type === "add_note") return "left a note";
+      if (s.type === "set_deal_fields" || s.type === "set_company_fields") return "updated fields";
+      return s.type.replace(/_/g, " ");
+    })
+    .slice(0, 3);
+  const tail = highlights.length ? ` → ${highlights.join(", ")}` : "";
+  return `Workflow “${name}” ${failed ? "had errors" : "ran"}${tail}`;
+}
+
 /* ── action execution ──────────────────────────────────────────────── */
 
 interface StepResult {
@@ -623,9 +642,9 @@ export async function evaluateWorkflowsForEvent(
         companyId: (getPath(snapshot, "company.id") as string) ?? null,
         dealId: (getPath(snapshot, "deal.id") as string) ?? null,
         type: "workflow.run",
-        summary: `Automation "${wf.name}" ${failed ? "partially failed" : "ran"} (${steps.filter((s) => s.status === "ok").length}/${steps.length} actions)`,
+        summary: summarizeWorkflowRun(wf.name, steps, failed),
         actor: "ai",
-        data: { __wf: true, workflowId: wf.id, steps },
+        data: { __wf: true, workflowId: wf.id, workflowName: wf.name, steps },
       });
       ran++;
     } catch (err) {
