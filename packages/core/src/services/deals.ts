@@ -152,13 +152,28 @@ export async function createDeal(
     throw new CoreError("companyId or companyName required", { code: "missing_company" });
   }
 
+  // normalize website → domain
+  const rawDomain = (input.domain ?? input.website ?? "").trim();
+  const normalizedDomain = rawDomain
+    ? rawDomain
+        .replace(/^https?:\/\//i, "")
+        .replace(/^www\./i, "")
+        .replace(/\/.*$/, "")
+        .toLowerCase()
+    : undefined;
+
   if (!companyId) {
-    const existing = await findCompanyMatch(ctx, ctx.db, session.workspaceId, input.companyName!, null);
+    const existing = await findCompanyMatch(ctx, ctx.db, session.workspaceId, input.companyName!, normalizedDomain ?? null);
     if (existing) {
       companyId = existing.id;
     } else {
       const company = await createCompany(ctx, session, {
         name: input.companyName!,
+        domain: normalizedDomain,
+        description: input.description,
+        sector: input.sector,
+        location: input.location,
+        linkedinUrl: input.linkedinUrl,
         pipelineId: input.pipelineId,
         stageId: input.stageId,
         ownerUserId: input.ownerUserId,

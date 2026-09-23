@@ -13,6 +13,34 @@ import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
 import { resolvePipelineStage } from "./pipelines.js";
 
+async function tryFastWebsiteEnrich(domain?: string | null): Promise<{ description?: string; sector?: string }> {
+  if (!domain) return {};
+  const url = `https://${domain}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "VentureLabsBot/0.1 (+https://venturelabs.vercel.app)" },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return {};
+    const html = await res.text();
+    const title = html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1]?.trim() ?? "";
+    const desc =
+      html.match(/<meta[^>]+name="description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
+      html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
+      "";
+    const out: Record<string, string> = {};
+    if (desc) out.description = desc.slice(0, 800);
+    else if (title) out.description = title.slice(0, 400);
+    // sector keyword heuristic (lightweight, no AI call before insert)
+    const lower = (desc + " " + title).toLowerCase();
+    if (/(inference|efficiency|developer|devtools|api|pipeline)/.test(lower)) out.sector = "Dev Tools";
+    else if (/(ai|machine learning|llm|model)/.test(lower)) out.sector = "AI/ML";
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 type Exec = Parameters<Parameters<CoreContext["db"]["transaction"]>[0]>[0];
 
 export async function nextStagePosition(
@@ -135,6 +163,12 @@ export async function createCompany(
   session: Session,
   input: CreateCompanyValues,
 ): Promise<CompanyDto> {
+  // Opportunistic fast enrichment before insert so Thesis Screener sees more than a bare name
+  let fastEnrich: { description?: string; sector?: string } = {};
+  if (input.domain && !input.description) {
+    fastEnrich = await tryFastWebsiteEnrich(input.domain);
+  }
+
   return ctx.db.transaction(async (tx) => {
     // dedupe by name/domain — unless explicitly updating an existing record
     const existing = await findCompanyMatch(ctx, tx, session.workspaceId, input.name, input.domain);
@@ -162,9 +196,9 @@ export async function createCompany(
         workspaceId: session.workspaceId,
         name: input.name,
         domain: input.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
-        sector: input.sector ?? null,
+        sector: input.sector ?? fastEnrich.sector ?? null,
         location: input.location ?? null,
-        description: input.description ?? null,
+        description: input.description ?? fastEnrich.description ?? null,
         linkedinUrl: input.linkedinUrl ?? null,
         logoUrl: input.logoUrl ?? null,
         foundedYear: input.foundedYear ?? null,
@@ -210,7 +244,24 @@ export async function createCompany(
     });
 
     return row.id;
-  }).then((id) => getCompany(ctx, session, String(id)));
+  }).then(async (id) => {
+    const companyId = String(id);
+    // Fire-and-forget enrichment when a domain is present — the Thesis Screener
+    // will see the enriched context (or at least the domain) instead of an empty pass.
+    const domain = input.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
+    if (domain) {
+      void ctx
+        .enqueue("enrich-company", { workspaceId: session.workspaceId, companyId })
+        .catch(() => undefined);
+      // If pg-boss is disabled (local dev without workers), run inline so demo isn't empty
+      if (!ctx.boss) {
+        void import("./enrichment.js")
+          .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
+          .catch(() => undefined);
+      }
+    }
+    return getCompany(ctx, session, companyId);
+  });
 }
 
 export async function updateCompany(
@@ -272,7 +323,20 @@ export async function updateCompany(
     });
 
     return companyId;
-  }).then((id) => getCompany(ctx, session, id));
+  }).then(async (id) => {
+    const companyId = String(id);
+    const domain = (patch as Record<string, unknown>).domain as string | undefined;
+    const cleaned = domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
+    if (cleaned) {
+      void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
+      if (!ctx.boss) {
+        void import("./enrichment.js")
+          .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
+          .catch(() => undefined);
+      }
+    }
+    return getCompany(ctx, session, companyId);
+  });
 }
 
 export async function upsertContact(

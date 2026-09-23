@@ -126,8 +126,8 @@ const RECS = ["advance", "watch", "pass"] as const;
 
 function normalizeThesisScore(raw: unknown): ThesisScoreOutput {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const rec = String(r.recommendation ?? "watch").toLowerCase();
-  const fit =
+  let rec = String(r.recommendation ?? "watch").toLowerCase();
+  let fit =
     typeof r.fitScore === "number" && Number.isFinite(r.fitScore)
       ? Math.max(0, Math.min(100, Math.round(r.fitScore)))
       : 50;
@@ -135,11 +135,22 @@ function normalizeThesisScore(raw: unknown): ThesisScoreOutput {
     Array.isArray(v)
       ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, 12)
       : [];
+  const reasons = asStrings(r.reasons);
+  const concerns = asStrings(r.concerns);
+  // Never auto-pass on thin material: upgrade low-signal passes to watch
+  if (rec === "pass" && reasons.length === 0 && concerns.some((c) => /little material|insufficient|needs enrichment/i.test(c))) {
+    rec = "watch";
+    fit = Math.max(fit, 45);
+  }
+  if (rec === "pass" && reasons.length === 0 && fit < 40) {
+    rec = "watch";
+    fit = Math.max(fit, 45);
+  }
   return {
     fitScore: fit,
     recommendation: (RECS as readonly string[]).includes(rec) ? (rec as ThesisScoreOutput["recommendation"]) : "watch",
-    reasons: asStrings(r.reasons),
-    concerns: asStrings(r.concerns),
+    reasons,
+    concerns,
     summary:
       typeof r.summary === "string" && r.summary.trim()
         ? r.summary.trim().slice(0, 800)

@@ -333,6 +333,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
   }
 
   async scoreThesis(input: ThesisScoreInput): Promise<ThesisScoreOutput> {
+    const isThin = input.sourceText.trim().length < 180;
     return this.structured<ThesisScoreOutput>(
       "thesis_screen",
       zodLikeJsonSchema(),
@@ -342,7 +343,11 @@ export class OpenAiCompatibleProvider implements AiProvider {
           content:
             "You are screening a company against a fund's codified investment thesis. " +
             "Return fitScore 0-100, recommendation advance|watch|pass, concrete reasons and concerns, " +
-            "and a two-sentence summary. Ground every claim in the provided material; say \"not stated\" where unknown.",
+            "and a two-sentence summary. Ground every claim in the provided material; say \"not stated\" where unknown. " +
+            (isThin
+              ? "The material is VERY THIN (<180 chars) — never emit \"pass\" on thin material; use \"watch\" and flag that more information is needed."
+              : "") +
+            " Do not auto-pass when there is insufficient information — prefer watch.",
         },
         {
           role: "user",

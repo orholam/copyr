@@ -296,6 +296,7 @@ export async function startWorkers(ctx: CoreContext, boss: PgBoss, concurrency: 
   await boss.createQueue("process-email");
   await boss.createQueue("parse-document");
   await boss.createQueue("convert-link");
+  await boss.createQueue("enrich-company");
   await boss.createQueue("run-review-table");
   await boss.createQueue("run-agent");
   await boss.createQueue("agent-scheduler-tick");
@@ -362,6 +363,14 @@ export async function startWorkers(ctx: CoreContext, boss: PgBoss, concurrency: 
   await boss.work("convert-link", { batchSize: concurrency, pollingIntervalSeconds: 1 }, async (jobs) => {
     for (const job of jobs) {
       await convertLinkJob(ctx, job.data as { workspaceId: string; documentId: string });
+    }
+  });
+
+  await boss.work("enrich-company", { batchSize: concurrency, pollingIntervalSeconds: 1 }, async (jobs) => {
+    for (const job of jobs) {
+      const d = job.data as { workspaceId: string; companyId: string };
+      const { enrichCompanyFromDomain } = await import("../services/enrichment.js");
+      await enrichCompanyFromDomain(ctx, d.workspaceId, d.companyId);
     }
   });
 

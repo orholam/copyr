@@ -152,6 +152,8 @@ export default function AddCompanyModal({
             const askRaw = fd.get("askAmount") as string;
             void manual.mutateAsync({
               companyName: String(fd.get("companyName")),
+              domain: (fd.get("website") as string)?.trim() || undefined,
+              website: (fd.get("website") as string)?.trim() || undefined,
               roundStage: (fd.get("roundStage") as string) || undefined,
               askAmount: askRaw ? Number(askRaw) * 1_000_000 : undefined,
               description: (fd.get("description") as string) || undefined,
@@ -159,7 +161,10 @@ export default function AddCompanyModal({
           }}
         >
           <Field label="Company name">
-            <input name="companyName" required className={inputCls} />
+            <input name="companyName" required className={inputCls} placeholder="Acme Inc." />
+          </Field>
+          <Field label="Website" hint="We enrich the company from its site before screening — helps the Thesis Screener avoid a thin-data pass.">
+            <input name="website" type="url" placeholder="https://acme.com" className={inputCls} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Round">
@@ -175,8 +180,9 @@ export default function AddCompanyModal({
             </Field>
           </div>
           <Field label="One-liner">
-            <input name="description" className={inputCls} />
+            <input name="description" placeholder="One sentence on what they do" className={inputCls} />
           </Field>
+          <p className="text-[11px] leading-5 text-paper-500">Tip: add the website — we’ll auto-enrich sector/description before the screener runs.</p>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={busy}>{busy && <Spinner className="h-3.5 w-3.5" />} Create deal</Button>

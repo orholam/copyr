@@ -525,7 +525,19 @@ export async function submitIntakeForm(
       await ctx.enqueue("convert-link", { workspaceId: form.workspaceId, documentId: doc.id });
     }
 
-    return { dealId: companyId, companyId };
+    return { dealId: companyId, companyId, _website: submission["website"] as string | undefined };
+  }).then(async (res) => {
+    if (res._website?.trim()) {
+      void ctx.enqueue("enrich-company", { workspaceId: form.workspaceId, companyId: res.companyId }).catch(() => undefined);
+      if (!ctx.boss) {
+        void import("./enrichment.js")
+          .then((m) => m.enrichCompanyFromDomain(ctx, form.workspaceId, res.companyId))
+          .catch(() => undefined);
+      }
+    }
+    const { _website: _ignored, ...out } = res as typeof res & { _website?: string };
+    void _ignored;
+    return out;
   });
 }
 

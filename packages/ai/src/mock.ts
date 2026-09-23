@@ -403,6 +403,11 @@ export class MockProvider implements AiProvider {
       concerns.push("Churn mentioned — probe retention drivers.");
       score -= 4;
     }
+    const trimmedLen = input.sourceText.trim().length;
+    const isThin = trimmedLen < 180 && reasons.length === 0;
+    if (isThin) {
+      concerns.push("Very little material available to evaluate — needs enrichment before a pass/advance call.");
+    }
     if (!input.sector && !text.trim()) {
       concerns.push("Very little material available to evaluate.");
       score -= 10;
@@ -417,6 +422,12 @@ export class MockProvider implements AiProvider {
     }
 
     score = Math.max(1, Math.min(99, score));
+    // Never auto-pass on thin context — default to watch so enrichment / docs can upgrade
+    if (isThin && score < 40) score = 45;
+    if (isThin && reasons.length === 0 && concerns.some((c) => /little material/i.test(c))) {
+      // ensure at least watch when we have no signals to judge
+      score = Math.max(score, 45);
+    }
     const recommendation: ThesisScoreOutput["recommendation"] =
       score >= 65 ? "advance" : score >= 40 ? "watch" : "pass";
 

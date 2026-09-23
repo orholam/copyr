@@ -1,23 +1,46 @@
 /**
- * Visual workflow builder — full-bleed dotted board, drag-from-palette, reorderable nodes.
- * Maps onto the existing WHEN / IF / THEN workflow model (no schema change).
+ * Visual workflow builder — dotted board, drag-from-palette + click-to-add,
+ * reorderable nodes. Maps onto existing WHEN / IF / THEN model (no schema change).
+ *
+ * Fixes applied vs original "beyond terrible" version:
+ * - Palette chips support click-to-add (drag is optional, not required).
+ * - Reorder uses a proper grab handle (larger hit area) + whole-card also draggable
+ *   via handle only so inputs remain interactive; sensors handle pointer + touch.
+ * - Pointer/Touch/Keyboard sensors with sane activation constraints to avoid
+ *   accidental drags while typing/selecting text.
+ * - Collision detection uses pointerWithin → rectIntersection and prioritizes
+ *   sortable cards so dropping "between" cards inserts there, not always appends.
+ * - Palette drops onto an existing card insert at that index; dropping on the
+ *   blank canvas or explicit drop zone appends.
+ * - DragOverlay is portaled to document.body (ancestors have transforms that
+ *   otherwise rebase fixed positioning — same fix as Pipeline.tsx).
+ * - Drop zones highlight while dragging a palette item; non-target zones mute.
+ * - CSS.Translate (not Transform) to avoid scale artifacts; transitions preserved.
  */
 import { useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -92,44 +115,85 @@ function PaletteChip({
   id,
   label,
   tone,
+  onAdd,
 }: {
   id: string;
   label: string;
   tone: "if" | "then";
+  onAdd: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `palette:${id}` });
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
-      {...listeners}
-      {...attributes}
-      className={cx(
-        "w-full cursor-grab rounded-md px-2 py-1.5 text-left text-[12px] font-medium transition active:cursor-grabbing",
-        tone === "if"
-          ? "bg-amber-500/10 text-amber-900 hover:bg-amber-500/15"
-          : "bg-emerald-500/10 text-emerald-900 hover:bg-emerald-500/15",
-        isDragging && "opacity-40",
-      )}
+      {...(attributes as unknown as Record<string, unknown>)}
+      {...(listeners as unknown as Record<string, unknown>)}
+      className={cx("relative flex", isDragging && "opacity-40")}
+      style={{ touchAction: "none" }}
     >
-      {label}
-    </button>
+      <button
+        type="button"
+        onClick={onAdd}
+        title="Click to add — or drag into the canvas"
+        className={cx(
+          "flex w-full items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-[12px] font-medium transition active:scale-[0.98]",
+          tone === "if"
+            ? "bg-amber-500/10 text-amber-900 hover:bg-amber-500/15"
+            : "bg-emerald-500/10 text-emerald-900 hover:bg-emerald-500/15",
+        )}
+      >
+        <span>{label}</span>
+        <span
+          className={cx(
+            "shrink-0 cursor-grab rounded px-1 text-[11px] leading-none touch-none select-none active:cursor-grabbing",
+            tone === "if" ? "text-amber-700/60" : "text-emerald-700/60",
+          )}
+          aria-hidden
+        >
+          ⋮⋮
+        </span>
+      </button>
+    </div>
   );
 }
 
-function CanvasDropZone({ id, label }: { id: string; label: string }) {
+function CanvasDropZone({
+  id,
+  label,
+  active,
+  muted,
+  onClick,
+}: {
+  id: string;
+  label: string;
+  active?: boolean;
+  muted?: boolean;
+  onClick?: () => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const highlighted = isOver || active;
   return (
     <div
       ref={setNodeRef}
       className={cx(
-        "flex h-8 items-center justify-center rounded-md border border-dashed text-[11px] font-medium transition",
-        isOver
+        "flex h-8 items-center justify-center gap-2 rounded-md border border-dashed text-[11px] font-medium transition",
+        highlighted
           ? "border-brand-500 bg-brand-500/10 text-brand-800"
-          : "border-paper-900/15 bg-white/30 text-paper-400",
+          : muted
+            ? "border-paper-900/10 bg-white/20 text-paper-300"
+            : "border-paper-900/15 bg-white/40 text-paper-400",
       )}
     >
-      {label}
+      <span>{label}</span>
+      {onClick && (
+        <button
+          type="button"
+          onClick={onClick}
+          className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-paper-700 shadow-sm ring-1 ring-paper-900/10 hover:bg-paper-50"
+        >
+          + Add
+        </button>
+      )}
     </div>
   );
 }
@@ -145,6 +209,7 @@ function NodeShell({
   attributes,
   listeners,
   isDragging,
+  isOver,
 }: {
   tone: "when" | "if" | "then";
   title: string;
@@ -156,6 +221,7 @@ function NodeShell({
   attributes?: Record<string, unknown>;
   listeners?: Record<string, unknown>;
   isDragging?: boolean;
+  isOver?: boolean;
 }) {
   const accents = {
     when: "border-l-brand-500",
@@ -172,16 +238,17 @@ function NodeShell({
       ref={setRef}
       style={style}
       className={cx(
-        "rounded-lg border border-paper-900/[0.1] border-l-[3px] bg-white/95 p-2.5 shadow-sm backdrop-blur-sm",
+        "rounded-lg border border-paper-900/[0.1] border-l-[3px] bg-white/95 p-2.5 shadow-sm backdrop-blur-sm transition",
         accents[tone],
-        isDragging && "opacity-60 ring-2 ring-brand-400/25",
+        isDragging && "z-10 opacity-60 shadow-lg ring-2 ring-brand-400/20",
+        isOver && "ring-2 ring-brand-400/25",
       )}
     >
       <div className="mb-1.5 flex items-center gap-1.5">
         {dragHandle && (
           <button
             type="button"
-            className="cursor-grab touch-none rounded px-0.5 text-[11px] text-paper-300 hover:text-paper-600 active:cursor-grabbing"
+            className="flex h-6 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-[10px] leading-none text-paper-300 hover:bg-paper-100 hover:text-paper-600 active:cursor-grabbing"
             aria-label="Drag to reorder"
             {...attributes}
             {...listeners}
@@ -196,7 +263,7 @@ function NodeShell({
           <button
             type="button"
             onClick={onRemove}
-            className="ml-auto rounded px-1 text-[11px] text-paper-300 hover:bg-red-50 hover:text-red-600"
+            className="ml-auto rounded px-1.5 py-0.5 text-[11px] text-paper-300 hover:bg-red-50 hover:text-red-600"
             title="Remove"
           >
             ✕
@@ -217,7 +284,7 @@ function SortableCondition({
   onChange: (patch: Partial<CondDraft>) => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
     id: cond.id,
   });
   return (
@@ -227,10 +294,11 @@ function SortableCondition({
       dragHandle
       onRemove={onRemove}
       setRef={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Translate.toString(transform), transition } as React.CSSProperties}
       attributes={attributes as never}
       listeners={listeners as never}
       isDragging={isDragging}
+      isOver={isOver as boolean}
     >
       <div className="flex flex-wrap gap-1.5">
         <input
@@ -272,7 +340,7 @@ function SortableAction({
   onChange: (patch: Partial<ActionDraft>) => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
     id: action.id,
   });
   const cfg = action.config;
@@ -283,10 +351,11 @@ function SortableAction({
       dragHandle
       onRemove={onRemove}
       setRef={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Translate.toString(transform), transition } as React.CSSProperties}
       attributes={attributes as never}
       listeners={listeners as never}
       isDragging={isDragging}
+      isOver={isOver as boolean}
     >
       <div className="flex flex-wrap gap-1.5">
         <select
@@ -377,68 +446,142 @@ export function WorkflowBuilder({
   saving?: boolean;
   isEdit?: boolean;
 }) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const [activePalette, setActivePalette] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const condIds = useMemo(() => draft.conditions.map((c) => c.id), [draft.conditions]);
   const actionIds = useMemo(() => draft.actions.map((a) => a.id), [draft.actions]);
 
   const set = (patch: Partial<WorkflowDraft>) => onChange({ ...draft, ...patch });
 
-  const addCondition = () =>
-    set({
-      conditions: [...draft.conditions, { id: uid("cond"), field: "", op: "eq", value: "" }],
-    });
+  const addConditionAt = (index?: number) => {
+    const next = { id: uid("cond"), field: "", op: "eq", value: "" };
+    if (index == null || index < 0 || index > draft.conditions.length) {
+      set({ conditions: [...draft.conditions, next] });
+    } else {
+      const copy = [...draft.conditions];
+      copy.splice(index, 0, next);
+      set({ conditions: copy });
+    }
+  };
 
-  const addAction = (type = "add_note") =>
-    set({
-      actions: [
-        ...draft.actions,
-        { id: uid("act"), type, config: type === "add_note" ? { body: "" } : {} },
-      ],
-    });
+  const addActionAt = (type = "add_note", index?: number) => {
+    const next = { id: uid("act"), type, config: type === "add_note" ? { body: "" } : {} };
+    if (index == null || index < 0 || index > draft.actions.length) {
+      set({ actions: [...draft.actions, next] });
+    } else {
+      const copy = [...draft.actions];
+      copy.splice(index, 0, next);
+      set({ actions: copy });
+    }
+  };
+
+  const collisionDetection: CollisionDetection = useMemo(() => {
+    return (args) => {
+      const pointerHits = pointerWithin(args);
+      const hits = pointerHits.length > 0 ? pointerHits : rectIntersection(args);
+      if (!hits.length) return [];
+      // When dragging a palette item, prefer the sortable card under pointer so
+      // we can insert at that position. Otherwise closestCenter via fallback.
+      if (pointerHits.length > 0) {
+        const sortableHit = hits.find((h) => {
+          const id = String(h.id);
+          return id.startsWith("cond-") || id.startsWith("act-");
+        });
+        if (sortableHit) return [sortableHit];
+      }
+      // Fall back to closestCenter behavior
+      return closestCenter(args);
+    };
+  }, []);
 
   const onDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id);
     if (id.startsWith("palette:")) setActivePalette(id.slice("palette:".length));
+    else setActivePalette(null);
+  };
+
+  const onDragOver = (e: DragOverEvent) => {
+    setOverId(e.over ? String(e.over.id) : null);
   };
 
   const onDragEnd = (e: DragEndEvent) => {
     setActivePalette(null);
+    setOverId(null);
     const { active, over } = e;
     if (!over) return;
     const activeId = String(active.id);
-    const overId = String(over.id);
+    const overStr = String(over.id);
 
     if (activeId.startsWith("palette:")) {
       const kind = activeId.slice("palette:".length) as PaletteKind;
-      if (kind === "condition" && (overId === "drop-conditions" || overId.startsWith("cond-") || overId === "flow-canvas")) {
-        addCondition();
+      if (kind === "condition") {
+        // Insert before the hovered condition, or append if dropped on canvas/drop zone
+        if (overStr.startsWith("cond-")) {
+          const idx = condIds.indexOf(overStr);
+          addConditionAt(idx >= 0 ? idx : undefined);
+        } else if (overStr.startsWith("act-")) {
+          // Dropped condition onto action list — still add to conditions (append)
+          addConditionAt();
+        } else {
+          addConditionAt();
+        }
       }
-      if (kind.startsWith("action:") && (overId === "drop-actions" || overId.startsWith("act-") || overId === "flow-canvas")) {
-        addAction(kind.slice("action:".length));
+      if (kind.startsWith("action:")) {
+        const type = kind.slice("action:".length);
+        if (overStr.startsWith("act-")) {
+          const idx = actionIds.indexOf(overStr);
+          addActionAt(type, idx >= 0 ? idx : undefined);
+        } else if (overStr.startsWith("cond-")) {
+          addActionAt(type);
+        } else {
+          addActionAt(type);
+        }
       }
       return;
     }
 
-    if (condIds.includes(activeId) && condIds.includes(overId) && activeId !== overId) {
-      set({ conditions: arrayMove(draft.conditions, condIds.indexOf(activeId), condIds.indexOf(overId)) });
+    // Sortable reorder — only within same list
+    if (condIds.includes(activeId) && condIds.includes(overStr) && activeId !== overStr) {
+      set({ conditions: arrayMove(draft.conditions, condIds.indexOf(activeId), condIds.indexOf(overStr)) });
       return;
     }
-    if (actionIds.includes(activeId) && actionIds.includes(overId) && activeId !== overId) {
-      set({ actions: arrayMove(draft.actions, actionIds.indexOf(activeId), actionIds.indexOf(overId)) });
+    if (actionIds.includes(activeId) && actionIds.includes(overStr) && activeId !== overStr) {
+      set({ actions: arrayMove(draft.actions, actionIds.indexOf(activeId), actionIds.indexOf(overStr)) });
     }
   };
 
+  const onDragCancel = () => {
+    setActivePalette(null);
+    setOverId(null);
+  };
+
+  const paletteDragging = activePalette != null;
+  const paletteIsCondition = activePalette === "condition";
+  const paletteIsAction = activePalette != null && activePalette.startsWith("action:");
+
   const { setNodeRef: setCanvasRef, isOver: canvasOver } = useDroppable({ id: "flow-canvas" });
+
+  const overlayLabel =
+    activePalette === "condition"
+      ? "Condition"
+      : activePalette
+        ? prettyEvent(activePalette.replace(/^action:/, ""))
+        : null;
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragStart={onDragStart}
+      onDragOver={onDragOver}
       onDragEnd={onDragEnd}
-      onDragCancel={() => setActivePalette(null)}
+      onDragCancel={onDragCancel}
     >
       {/* Entire editor = dotted plane. Chrome floats on top. */}
       <div className={cx("relative flex min-h-0 flex-1 flex-col overflow-hidden", DOTTED_BG)}>
@@ -470,20 +613,34 @@ export function WorkflowBuilder({
 
         <div className="relative flex min-h-0 flex-1">
           {/* Palette — sits on the dots, no nested frame */}
-          <aside className="relative z-10 flex w-[148px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-paper-900/[0.06] bg-white/55 p-2 backdrop-blur-md">
+          <aside className="relative z-10 flex w-[156px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-paper-900/[0.06] bg-white/55 p-2 backdrop-blur-md">
             <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-paper-400">
-              Drag in
+              Drag in <span className="font-normal normal-case tracking-normal text-paper-400/80">· or click</span>
             </p>
             <div className="space-y-1">
               <p className="px-0.5 text-[10px] font-medium text-amber-700/70">If</p>
-              <PaletteChip id="condition" label="Condition" tone="if" />
+              <PaletteChip
+                id="condition"
+                label="Condition"
+                tone="if"
+                onAdd={() => addConditionAt()}
+              />
             </div>
             <div className="space-y-1">
               <p className="px-0.5 text-[10px] font-medium text-emerald-700/70">Then</p>
               {ACTION_OPTIONS.map((t) => (
-                <PaletteChip key={t} id={`action:${t}`} label={prettyEvent(t)} tone="then" />
+                <PaletteChip
+                  key={t}
+                  id={`action:${t}`}
+                  label={prettyEvent(t)}
+                  tone="then"
+                  onAdd={() => addActionAt(t)}
+                />
               ))}
             </div>
+            <p className="mt-1 px-0.5 text-[10px] leading-tight text-paper-400">
+              Tip: click to add instantly; drag to place between steps.
+            </p>
           </aside>
 
           {/* Flow */}
@@ -491,7 +648,7 @@ export function WorkflowBuilder({
             ref={setCanvasRef}
             className={cx(
               "relative min-w-0 flex-1 overflow-auto px-4 py-4 transition",
-              canvasOver && "bg-brand-500/[0.03]",
+              (canvasOver || paletteDragging) && "bg-brand-500/[0.03]",
             )}
           >
             <div className="mx-auto flex w-full max-w-md flex-col">
@@ -510,13 +667,25 @@ export function WorkflowBuilder({
               </NodeShell>
 
               <Connector />
-              <CanvasDropZone id="drop-conditions" label="Drop conditions" />
+              <CanvasDropZone
+                id="drop-conditions"
+                label={paletteIsAction ? "Conditions — drop action to append below" : "Drop condition here"}
+                active={paletteDragging && (paletteIsCondition || overId === "drop-conditions")}
+                muted={paletteIsAction}
+                onClick={() => addConditionAt()}
+              />
 
               <SortableContext items={condIds} strategy={verticalListSortingStrategy}>
-                <div>
+                <div className="mt-2 space-y-0">
                   {draft.conditions.map((c, i) => (
                     <div key={c.id}>
+                      {i === 0 && paletteIsCondition && overId === c.id && (
+                        <div className="mb-1 h-1 rounded-full bg-brand-500/60" aria-hidden />
+                      )}
                       {i > 0 && <Connector />}
+                      {i > 0 && paletteIsCondition && overId === c.id && (
+                        <div className="mx-2 mb-1 h-1 rounded-full bg-brand-500/60" aria-hidden />
+                      )}
                       <SortableCondition
                         cond={c}
                         onChange={(patch) =>
@@ -535,20 +704,32 @@ export function WorkflowBuilder({
                 </div>
               </SortableContext>
 
-              {draft.conditions.length === 0 && (
+              {draft.conditions.length === 0 && !paletteDragging && (
                 <p className="mt-1 text-center text-[10px] text-paper-400">
-                  No gates — every matching event runs
+                  No gates — every matching event runs · click or drag a Condition
                 </p>
               )}
 
               <Connector />
-              <CanvasDropZone id="drop-actions" label="Drop actions" />
+              <CanvasDropZone
+                id="drop-actions"
+                label={paletteIsCondition ? "Actions — drop condition above" : "Drop action here"}
+                active={paletteDragging && (paletteIsAction || overId === "drop-actions")}
+                muted={paletteIsCondition}
+                onClick={() => addActionAt("add_note")}
+              />
 
               <SortableContext items={actionIds} strategy={verticalListSortingStrategy}>
-                <div>
+                <div className="mt-2 space-y-0">
                   {draft.actions.map((a, i) => (
                     <div key={a.id}>
+                      {i === 0 && paletteIsAction && overId === a.id && (
+                        <div className="mb-1 h-1 rounded-full bg-emerald-500/60" aria-hidden />
+                      )}
                       {i > 0 && <Connector />}
+                      {i > 0 && paletteIsAction && overId === a.id && (
+                        <div className="mx-2 mb-1 h-1 rounded-full bg-emerald-500/60" aria-hidden />
+                      )}
                       <SortableAction
                         action={a}
                         onChange={(patch) =>
@@ -569,23 +750,33 @@ export function WorkflowBuilder({
 
               {draft.actions.length === 0 && (
                 <p className="mt-2 text-center text-[11px] text-amber-700">
-                  Drop at least one action
+                  Drop or click at least one action
                 </p>
               )}
+              <div className="mt-3 flex justify-center gap-2">
+                <Button size="xs" variant="outline" onClick={() => addConditionAt()}>
+                  + Condition
+                </Button>
+                <Button size="xs" variant="outline" onClick={() => addActionAt("add_note")}>
+                  + Action
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <DragOverlay>
-        {activePalette ? (
-          <div className="rounded-md border border-paper-900/15 bg-white px-2.5 py-1.5 text-xs font-medium shadow-lg">
-            {activePalette === "condition"
-              ? "Condition"
-              : prettyEvent(activePalette.replace(/^action:/, ""))}
-          </div>
-        ) : null}
-      </DragOverlay>
+      {typeof document !== "undefined" &&
+        createPortal(
+          <DragOverlay dropAnimation={null}>
+            {overlayLabel ? (
+              <div className="rounded-md border border-paper-900/15 bg-white px-2.5 py-1.5 text-xs font-medium shadow-xl">
+                {overlayLabel}
+              </div>
+            ) : null}
+          </DragOverlay>,
+          document.body,
+        )}
     </DndContext>
   );
 }
