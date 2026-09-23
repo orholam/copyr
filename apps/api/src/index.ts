@@ -6,6 +6,14 @@ async function main() {
   if (config.AUTO_MIGRATE) {
     const { runMigrations } = await import("@copyr/db/migrate");
     await runMigrations(config.DATABASE_URL);
+  } else if (config.NODE_ENV === "production") {
+    console.warn(
+      "AUTO_MIGRATE=false: drizzle will not run on boot. " +
+        "If companies.archived_at or companies.stage_id are missing, apply " +
+        "packages/db/drizzle/0007_dapper_chamber.sql (full merge) or " +
+        "docs/sql/hotfix-companies-pipeline-columns.sql (nullable columns + backfill), " +
+        "or set AUTO_MIGRATE=true / rely on render.yaml preDeployCommand.",
+    );
   }
   const app = await buildApp();
 

@@ -10,9 +10,16 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile.api
     healthCheckPath: /health
+    # Runs drizzle migrations in the new image before traffic switches.
+    # Independent of AUTO_MIGRATE (a dashboard "false" previously skipped 0007).
+    # Paid instances only; on a free plan set Pre-Deploy Command in the dashboard
+    # or flip AUTO_MIGRATE=true and restart.
+    preDeployCommand: pnpm db:migrate
     envVars:
       - key: NODE_ENV
         value: production
+      # Dashboard env overrides this blueprint. Leave unset or "true".
+      # "false" is what left companies.archived_at / stage_id missing on venlabs-demo.
       - key: AUTO_MIGRATE
         value: "true"
       - key: CORS_ALLOW_VERCEL_PREVIEWS

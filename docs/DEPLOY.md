@@ -139,9 +139,63 @@ pnpm db:seed          # optional Harbor Ventures demo data
 3. Apply Drizzle migrations from `packages/db/drizzle`.
 4. `ENABLE ROW LEVEL SECURITY` on public tables with no policies, so the Supabase anon key cannot read VentureLabs tables via PostgREST. The API uses the `postgres` role (`BYPASSRLS`).
 
-On Render, `AUTO_MIGRATE=true` (set in `render.yaml`) runs the same migrate on API boot.
+On Render, migrate runs in **two** places so a dashboard override cannot skip schema updates again:
+
+1. **`preDeployCommand: pnpm db:migrate`** in [`render.yaml`](../render.yaml) — applies `packages/db/drizzle` in the new image **before** traffic switches. A failed migrate cancels the deploy. Requires a paid instance; if the command is missing in the dashboard, add **Pre-Deploy Command** = `pnpm db:migrate`.
+2. **`AUTO_MIGRATE=true`** on API boot (also set in `render.yaml`). The Render **dashboard env wins** over the blueprint. `AUTO_MIGRATE=false` there is what left production on a pre-merge `companies` table after the company-deal deploy.
+
+If `0007` was never applied, either run `pnpm db:migrate` against the session-pooler `DATABASE_URL`, or paste [`docs/sql/hotfix-companies-pipeline-columns.sql`](sql/hotfix-companies-pipeline-columns.sql) in the Supabase SQL editor (nullable columns + optional backfill from `deals`; does **not** drop `deals`). Then set dashboard `AUTO_MIGRATE=true` and redeploy so drizzle records `0007_dapper_chamber`.
 
 Local docker-compose is unchanged: `pnpm db:up` then `pnpm db:migrate` against `localhost:5433`.
+
+### Company-deal merge (`0007_dapper_chamber`) — schema drift
+
+Current `main` treats a **company as the pipeline card**. `packages/db/src/schema.ts` `companies` expects these columns (added in [`packages/db/drizzle/0007_dapper_chamber.sql`](../packages/db/drizzle/0007_dapper_chamber.sql)):
+
+| Column | TypeScript / SQL type | Nullability in 0007 |
+|---|---|---|
+| `pipeline_id` | `uuid` → `pipelines.id` | `NOT NULL` after backfill |
+| `stage_id` | `uuid` → `stages.id` | `NOT NULL` after backfill |
+| `owner_user_id` | `uuid` → `users.id` | nullable |
+| `round_stage` | `text` | nullable |
+| `ask_amount` | `numeric(14, 2)` | nullable |
+| `valuation` | `numeric(14, 2)` | nullable |
+| `priority` | `integer` default `0` | `NOT NULL` |
+| `position` | `text` default `'a0'` | `NOT NULL` |
+| `next_step_at` | `timestamptz` | nullable |
+| `archived_at` | `timestamptz` | nullable |
+| `source_ref` | `text` | nullable |
+
+Indexes: `companies_ws_pipeline_idx (workspace_id, pipeline_id)`, `companies_stage_idx (stage_id, position)`.
+
+Missing `archived_at` 500s `GET /api/v1/analytics/overview`. Missing `stage_id` 500s `GET /api/v1/deals`. This is **not** CORS/`WEB_URL`.
+
+**Immediate SQL** (same types as `schema.ts`; leave `stage_id` / `archived_at` nullable so existing rows survive). Full script: [`docs/sql/hotfix-companies-pipeline-columns.sql`](sql/hotfix-companies-pipeline-columns.sql).
+
+```sql
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS stage_id uuid;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS archived_at timestamp with time zone;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS position text DEFAULT 'a0' NOT NULL;
+CREATE INDEX IF NOT EXISTS companies_stage_idx
+  ON public.companies USING btree (stage_id, position);
+```
+
+Also add the other 0007 columns in that file (`pipeline_id`, `owner_user_id`, `round_stage`, `ask_amount`, `valuation`, `priority`, `position`, `next_step_at`, `source_ref`) or the next route will 500. Do **not** `SET NOT NULL` or `DROP TABLE deals` from the SQL editor unless you are running the full 0007 file; `pnpm db:migrate` does that after copying deal rows onto companies.
+
+Confirm:
+
+```sql
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'companies'
+  AND column_name IN ('archived_at', 'stage_id', 'pipeline_id');
+
+SELECT id, hash, created_at
+FROM drizzle.__drizzle_migrations
+ORDER BY created_at;
+```
+
+`0007_dapper_chamber` is applied when that journal has 8 rows (idx 0–7). If the hotfix ran but drizzle has not, the next `pnpm db:migrate` still applies 0007 (`ADD COLUMN IF NOT EXISTS` is a no-op; it then remaps child `deal_id`s and drops `public.deals`).
 
 ## 2. Supabase Storage (S3 protocol)
 
@@ -177,7 +231,7 @@ Recommended: **Render** with the repo `Dockerfile.api` and `render.yaml`.
 | `PUBLIC_URL` | Public API origin, e.g. `https://copyr-api.onrender.com` |
 | `WEB_URL` | Vercel origin, e.g. `https://copyr.vercel.app` |
 | `CORS_ALLOW_VERCEL_PREVIEWS` | `true` so `*.vercel.app` previews can call the API |
-| `AUTO_MIGRATE` | `true` on Render |
+| `AUTO_MIGRATE` | `true` on Render (do **not** set `false` in the dashboard — it overrides `render.yaml`) |
 | `ALLOW_DEV_WORKSPACE_AUTH` | `false` in production (do not re-enable slug-only “any header” auth) |
 | `SUPABASE_URL` | `https://cdsngnauduhiaidzncie.supabase.co` |
 | `SUPABASE_JWT_SECRET` | Dashboard → Project Settings → API → JWT Secret (legacy HS256). Server-only. |
