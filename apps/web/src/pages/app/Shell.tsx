@@ -19,7 +19,7 @@ import {
 } from "../../components/icons";
 import { CommandPalette, type SearchFilter } from "../../components/CommandPalette";
 import { useRealtime } from "../../lib/sse";
-import { api, WORKSPACE_SLUG, rememberWorkspaceSlug } from "../../lib/api";
+import { api, getWorkspaceSlug, rememberWorkspaceSlug } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import AddCompanyModal from "./AddCompanyModal";
 
@@ -69,8 +69,6 @@ export default function AppShell() {
   const [paletteFilter, setPaletteFilter] = useState<SearchFilter>("all");
   const { dark, toggle } = useTheme();
 
-  useRealtime(WORKSPACE_SLUG);
-
   const meQ = useQuery({ queryKey: ["me"], queryFn: () => api.get<Me>("/me") });
   const ws = meQ.data?.workspace;
   const self = ws?.members.find((m) => m.id === meQ.data?.actor.userId);
@@ -78,6 +76,9 @@ export default function AppShell() {
   const credits = ws?.aiCreditsBalance ?? 0;
   const creditPct = Math.max(3, Math.min(100, Math.round((credits / 500) * 100)));
   const display = self ?? owner;
+  const liveSlug = getWorkspaceSlug() ?? ws?.slug;
+
+  useRealtime(liveSlug ?? "");
 
   useEffect(() => {
     if (ws?.slug) rememberWorkspaceSlug(ws.slug);
@@ -116,7 +117,7 @@ export default function AppShell() {
           </span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-semibold leading-4 tracking-tight text-paper-900">
-              {ws?.name ?? WORKSPACE_SLUG}
+              {ws?.name ?? "Workspace"}
             </div>
             <div className="truncate text-[10px] font-medium uppercase tracking-wider leading-[13px] text-paper-400">
               {ws?.plan ?? "workspace"} plan

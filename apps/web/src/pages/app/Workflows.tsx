@@ -126,7 +126,7 @@ export default function Workflows() {
             }
           />
         ) : (
-          <div className="mx-auto grid max-w-3xl gap-2.5">
+          <div className="mx-auto grid max-w-4xl gap-2.5">
             {workflows.map((w) => (
               <div
                 key={w.id}
