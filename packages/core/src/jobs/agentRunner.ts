@@ -47,8 +47,29 @@ export async function executeAgentRun(
   try {
     let output: Record<string, unknown> = {};
 
-    // ── thesis_screen ────────────────────────────────────────────────
-    if (agent.kind === "thesis_screen") {
+    // ── Website Enricher (custom but visible agent) ─────────────────
+    if (agent.name === "Website Enricher") {
+      if (!companyId) throw new Error("Website Enricher requires a company scope");
+      steps.push({ step: "enrich_fetch", status: "running", at: now() });
+      const { enrichCompanyFromDomain } = await import("../services/enrichment.js");
+      const result = await enrichCompanyFromDomain(ctx, workspaceId, companyId);
+      output = { enriched: result.enriched, detail: result.detail ?? null, domain: result.enriched ? "ok" : "skipped" };
+      steps.push({
+        step: "enriched",
+        status: "ok",
+        detail: result.enriched ? String(result.detail ?? "enriched") : `skipped: ${result.detail ?? ""}`,
+        at: now(),
+      });
+      // Also leave a lightweight note so the run is visible in the company timeline
+      if (result.enriched) {
+        await ctx.db.insert(notes).values({
+          workspaceId,
+          companyId,
+          body: `**Website Enricher** — enriched from domain before screening (${String(result.detail ?? "")}).`.slice(0, 2000),
+          authorUserId: null,
+        });
+      }
+    } else if (agent.kind === "thesis_screen") {
       steps.push({ step: "gather_context", status: "running", at: now() });
       if (!companyId) throw new Error("thesis_screen requires a company scope");
       const context = await gatherCompanyContext(ctx, workspaceId, companyId);
@@ -475,6 +496,9 @@ function summarizeAgentCompletion(
   kind: string,
   output: Record<string, unknown>,
 ): string {
+  if (agentName === "Website Enricher") {
+    return output.enriched ? `${agentName} enriched website → ${String(output.detail ?? "ok")}` : `${agentName} skipped`;
+  }
   if (kind === "diligence_checklist") {
     const n = Array.isArray(output.createdTasks) ? output.createdTasks.length : 0;
     return `${agentName} created ${n} open diligence task${n === 1 ? "" : "s"}`;

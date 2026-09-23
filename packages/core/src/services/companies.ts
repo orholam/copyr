@@ -246,19 +246,36 @@ export async function createCompany(
     return row.id;
   }).then(async (id) => {
     const companyId = String(id);
-    // Fire-and-forget enrichment when a domain is present — the Thesis Screener
-    // will see the enriched context (or at least the domain) instead of an empty pass.
     const domain = input.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
     if (domain) {
-      void ctx
-        .enqueue("enrich-company", { workspaceId: session.workspaceId, companyId })
-        .catch(() => undefined);
-      // If pg-boss is disabled (local dev without workers), run inline so demo isn't empty
-      if (!ctx.boss) {
-        void import("./enrichment.js")
-          .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
-          .catch(() => undefined);
-      }
+      // Visible enrichment: queue the Website Enricher agent (customers see it in Agents)
+      // and also keep the raw job as a fallback if the agent isn't seeded yet.
+      void (async () => {
+        try {
+          const { agents } = await import("@copyr/db/schema.js");
+          const [agent] = await ctx.db
+            .select()
+            .from(agents)
+            .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
+          if (agent) {
+            const { queueAgentRun } = await import("./agents.js");
+            await queueAgentRun(
+              ctx,
+              { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } },
+              agent.id,
+              { companyId, dealId: companyId, trigger: "workflow" },
+            );
+            return;
+          }
+        } catch {}
+        // fallback: raw enrichment job / inline
+        void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
+        if (!ctx.boss) {
+          void import("./enrichment.js")
+            .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
+            .catch(() => undefined);
+        }
+      })().catch(() => undefined);
     }
     return getCompany(ctx, session, companyId);
   });
@@ -328,12 +345,31 @@ export async function updateCompany(
     const domain = (patch as Record<string, unknown>).domain as string | undefined;
     const cleaned = domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
     if (cleaned) {
-      void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
-      if (!ctx.boss) {
-        void import("./enrichment.js")
-          .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
-          .catch(() => undefined);
-      }
+      void (async () => {
+        try {
+          const { agents } = await import("@copyr/db/schema.js");
+          const [agent] = await ctx.db
+            .select()
+            .from(agents)
+            .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
+          if (agent) {
+            const { queueAgentRun } = await import("./agents.js");
+            await queueAgentRun(
+              ctx,
+              { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } },
+              agent.id,
+              { companyId, dealId: companyId, trigger: "workflow" },
+            );
+            return;
+          }
+        } catch {}
+        void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
+        if (!ctx.boss) {
+          void import("./enrichment.js")
+            .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
+            .catch(() => undefined);
+        }
+      })().catch(() => undefined);
     }
     return getCompany(ctx, session, companyId);
   });

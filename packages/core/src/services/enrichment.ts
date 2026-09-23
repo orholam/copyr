@@ -1,5 +1,5 @@
 import { eq, and } from "drizzle-orm";
-import { companies, customFields, agents, fieldValues } from "@copyr/db/schema.js";
+import { companies, customFields, fieldValues } from "@copyr/db/schema.js";
 import type { CoreContext, Session } from "../context.js";
 import { logActivity } from "../activity.js";
 
@@ -124,24 +124,6 @@ export async function enrichCompanyFromDomain(
     actor: "ai",
     data: { domain: company.domain, patchKeys: Object.keys(patch), inferredFields: Object.keys(inferredFields) },
   });
-
-  // Kick Thesis Screener again now that context is richer
-  try {
-    const [screener] = await ctx.db
-      .select()
-      .from(agents)
-      .where(and(eq(agents.workspaceId, workspaceId), eq(agents.name, "Thesis Screener")));
-    if (screener?.isActive) {
-      const { queueAgentRun } = await import("./agents.js");
-      await queueAgentRun(ctx, { workspaceId, actor: { userId: null, source: "agent" } }, screener.id, {
-        companyId,
-        dealId: companyId,
-        trigger: "workflow",
-      });
-    }
-  } catch {
-    // best-effort
-  }
 
   return { enriched: true, detail: `patched ${Object.keys(patch).join(",")}` };
 }

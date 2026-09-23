@@ -528,12 +528,31 @@ export async function submitIntakeForm(
     return { dealId: companyId, companyId, _website: submission["website"] as string | undefined };
   }).then(async (res) => {
     if (res._website?.trim()) {
-      void ctx.enqueue("enrich-company", { workspaceId: form.workspaceId, companyId: res.companyId }).catch(() => undefined);
-      if (!ctx.boss) {
-        void import("./enrichment.js")
-          .then((m) => m.enrichCompanyFromDomain(ctx, form.workspaceId, res.companyId))
-          .catch(() => undefined);
-      }
+      void (async () => {
+        try {
+          const { agents } = await import("@copyr/db/schema.js");
+          const [agent] = await ctx.db
+            .select()
+            .from(agents)
+            .where(and(eq(agents.workspaceId, form.workspaceId), eq(agents.name, "Website Enricher")));
+          if (agent) {
+            const { queueAgentRun } = await import("./agents.js");
+            await queueAgentRun(
+              ctx,
+              { workspaceId: form.workspaceId, actor: { userId: null, source: "agent" } },
+              agent.id,
+              { companyId: res.companyId, dealId: res.companyId, trigger: "workflow" },
+            );
+            return;
+          }
+        } catch {}
+        void ctx.enqueue("enrich-company", { workspaceId: form.workspaceId, companyId: res.companyId }).catch(() => undefined);
+        if (!ctx.boss) {
+          void import("./enrichment.js")
+            .then((m) => m.enrichCompanyFromDomain(ctx, form.workspaceId, res.companyId))
+            .catch(() => undefined);
+        }
+      })().catch(() => undefined);
     }
     const { _website: _ignored, ...out } = res as typeof res & { _website?: string };
     void _ignored;

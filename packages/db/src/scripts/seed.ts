@@ -471,6 +471,13 @@ async function main() {
         isSystem: true, runCount: 3, lastRunAt: daysAgo(1), createdByUserId: gp.id,
       },
       {
+        workspaceId: wsId, name: "Website Enricher", kind: "custom",
+        description: "Fetches the company website and fills gaps (description, sector, fields) before screening — so manual entries with a domain get a fair score.",
+        instructions: "Fetch https://<domain>, extract title/meta description, infer sector/fields, write only missing values. Best-effort, never clobber human input.",
+        config: {},
+        isSystem: true, createdByUserId: gp.id,
+      },
+      {
         workspaceId: wsId, name: "Diligence Checklist Builder", kind: "diligence_checklist",
         description: "Provisions the standard Harbor diligence checklist into a deal space.",
         config: {
@@ -647,6 +654,29 @@ async function main() {
 
   // ── unified automations: event → agent → action chains ─────────────
   await db.insert(workflows).values([
+    {
+      workspaceId: wsId,
+      name: "Enrich new companies",
+      description: "When a company lands with a website, fetch it first so screening has material.",
+      triggerEvent: "company.created",
+      conditions: [{ field: "company.domain", op: "exists" }],
+      actions: [{ type: "run_agent", config: { agentName: "Website Enricher" } }],
+      isEnabled: true,
+      createdByUserId: gp.id,
+    },
+    {
+      workspaceId: wsId,
+      name: "Screen after enrichment",
+      description: "After the Website Enricher runs, re-screen with enriched context.",
+      triggerEvent: "agent_run.completed",
+      conditions: [
+        { field: "agent.name", op: "eq", value: "Website Enricher" },
+        { field: "output.enriched", op: "eq", value: true },
+      ],
+      actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
+      isEnabled: true,
+      createdByUserId: gp.id,
+    },
     {
       workspaceId: wsId,
       name: "Promote advancing screens",

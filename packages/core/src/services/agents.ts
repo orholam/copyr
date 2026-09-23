@@ -75,6 +75,16 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       isSystem: true,
     },
     {
+      name: "Website Enricher",
+      kind: "custom" as const,
+      description:
+        "Fetches the company website and fills gaps (description, sector, custom fields) before screening — so manual entries with a domain get a fair thesis score.",
+      instructions:
+        "Fetch https://<domain>, extract title/meta description, infer sector/fields with the available heuristics, and write only missing values. Be best-effort and never clobber human input.",
+      config: {},
+      isSystem: true,
+    },
+    {
       name: "Diligence Checklist Builder",
       kind: "diligence_checklist" as const,
       description:
@@ -140,10 +150,29 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
   isEnabled: boolean;
 }> = [
   {
+    name: "Enrich new companies",
+    description: "When a company lands in the pipeline with a website, fetch it first so screening has material.",
+    triggerEvent: "company.created",
+    conditions: [{ field: "company.domain", op: "exists" }],
+    actions: [{ type: "run_agent", config: { agentName: "Website Enricher" } }],
+    isEnabled: true,
+  },
+  {
     name: "Screen new companies",
     description: "When a company lands in the pipeline, run Thesis Screener for an advance / watch / pass call.",
     triggerEvent: "company.created",
     conditions: [],
+    actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
+    isEnabled: true,
+  },
+  {
+    name: "Screen after enrichment",
+    description: "After the Website Enricher runs, re-screen with the enriched context.",
+    triggerEvent: "agent_run.completed",
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Website Enricher" },
+      { field: "output.enriched", op: "eq", value: true },
+    ],
     actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
     isEnabled: true,
   },
