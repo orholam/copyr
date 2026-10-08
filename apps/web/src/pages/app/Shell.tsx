@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, useOutlet, useLocation, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cx, Avatar } from "../../components/ui";
 import { ThemeToggle, useTheme } from "../../lib/theme";
 import {
@@ -51,9 +51,17 @@ const NAV = [
   },
 ];
 
+interface OrgOption {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 interface Me {
   workspace: { id: string; name: string; slug: string; plan: string; aiCreditsBalance: number; members: Array<{ id: string; name: string; title?: string | null; role: string }> };
   actor: { userId: string | null; source: string };
+  organizations?: OrgOption[];
 }
 
 export default function AppShell() {
@@ -66,6 +74,8 @@ export default function AppShell() {
   const isWorkflowsRoute = location.pathname === "/app/workflows";
   const isFullBleed = isAssistantRoute || isWorkflowsRoute;
   const [showAdd, setShowAdd] = useState(false);
+  const [newOrg, setNewOrg] = useState("");
+  const [showNewOrg, setShowNewOrg] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState<SearchFilter>("all");
   const { dark, toggle } = useTheme();
@@ -82,6 +92,23 @@ export default function AppShell() {
   const creditPct = Math.max(3, Math.min(100, Math.round((credits / 500) * 100)));
   const display = self ?? owner;
   const liveSlug = getWorkspaceSlug() ?? ws?.slug;
+  const organizations = meQ.data?.organizations ?? [];
+
+  const createOrg = useMutation({
+    mutationFn: (name: string) => api.post<{ slug: string }>("/organizations", { name }),
+    onSuccess: async (created) => {
+      rememberWorkspaceSlug(created.slug);
+      setNewOrg("");
+      setShowNewOrg(false);
+      await qc.invalidateQueries();
+    },
+  });
+
+  function switchOrg(slug: string) {
+    if (!slug || slug === ws?.slug) return;
+    rememberWorkspaceSlug(slug);
+    void qc.invalidateQueries();
+  }
 
   useRealtime(liveSlug ?? "");
 
@@ -143,6 +170,56 @@ export default function AppShell() {
               {ws?.plan ?? "workspace"} plan
             </div>
           </div>
+        </div>
+        <div className="px-3 pb-1">
+          {showNewOrg ? (
+            <form
+              className="flex gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newOrg.trim()) createOrg.mutate(newOrg.trim());
+              }}
+            >
+              <input
+                autoFocus
+                value={newOrg}
+                onChange={(e) => setNewOrg(e.target.value)}
+                placeholder="Organization name"
+                aria-label="Organization name"
+                className="h-7 min-w-0 flex-1 rounded-md border border-paper-900/[0.13] bg-white px-2 text-[12px]"
+              />
+              <button type="submit" className="text-[11px] font-medium text-paper-800" disabled={createOrg.isPending}>
+                Add
+              </button>
+              <button type="button" className="text-[11px] text-paper-500" onClick={() => setShowNewOrg(false)}>
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1">
+              {organizations.length > 1 && (
+                <select
+                  aria-label="Organization"
+                  className="h-7 min-w-0 flex-1 rounded-md border border-paper-900/[0.13] bg-white px-1.5 text-[12px] text-paper-800"
+                  value={ws?.slug ?? ""}
+                  onChange={(e) => switchOrg(e.target.value)}
+                >
+                  {organizations.map((org) => (
+                    <option key={org.id} value={org.slug}>
+                      {org.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                className="h-7 shrink-0 rounded-md px-1.5 text-[11px] font-medium text-paper-600 hover:bg-paper-900/[0.04] hover:text-paper-900"
+                onClick={() => setShowNewOrg(true)}
+              >
+                New org
+              </button>
+            </div>
+          )}
         </div>
 
         <button

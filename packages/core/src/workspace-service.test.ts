@@ -4,10 +4,15 @@ import { SignJWT } from "jose";
 import { randomUUID } from "node:crypto";
 import { memberships, users as usersTable, workspaces } from "@copyr/db/schema.js";
 import {
+  addMember,
   assertPermission,
+  createOrganization,
+  listOrganizations,
   memberPermissions,
+  removeMember,
   resolveSession,
   revokeApiKey,
+  searchAccounts,
 } from "./services/workspace.js";
 import { CoreError } from "./context.js";
 import type { Session } from "./context.js";
@@ -236,6 +241,38 @@ describe.skipIf(db === null)("workspace service (integration)", () => {
       expect(again.workspaceId).toBe(session.workspaceId);
       await fx.db.delete(workspaces).where(eq(workspaces.id, session.workspaceId));
       await fx.db.delete(usersTable).where(eq(usersTable.id, sub));
+    });
+
+    it("shares an organization when an owner adds an existing account", async () => {
+      const session: Session = {
+        workspaceId: fx.workspaceId,
+        actor: { userId: fx.userIds.owner, source: "api" },
+      };
+      const created = await createOrganization(fx.ctx, session, `Shared ${fx.workspaceSlug}`);
+      const [partner] = await fx.db
+        .insert(usersTable)
+        .values({
+          email: `partner-${fx.workspaceSlug}@test.copyr.dev`,
+          name: "Partner Person",
+        })
+        .returning();
+      try {
+        const orgSession = { workspaceId: created.id, actor: session.actor };
+        const hits = await searchAccounts(fx.ctx, orgSession, "Partner Person");
+        expect(hits.some((h) => h.id === partner.id)).toBe(true);
+        await addMember(fx.ctx, orgSession, { userId: partner.id, role: "member" });
+        const orgs = await listOrganizations(fx.ctx, partner.id);
+        expect(orgs.map((o) => o.id)).toContain(created.id);
+        await expect(addMember(fx.ctx, orgSession, { userId: partner.id })).rejects.toMatchObject({
+          status: 409,
+        });
+        await expect(removeMember(fx.ctx, orgSession, fx.userIds.owner)).rejects.toMatchObject({
+          status: 409,
+        });
+      } finally {
+        await fx.db.delete(workspaces).where(eq(workspaces.id, created.id));
+        await fx.db.delete(usersTable).where(eq(usersTable.id, partner.id));
+      }
     });
 
     it("rejects a forged token", async () => {

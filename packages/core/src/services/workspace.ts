@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import {
   apiKeys,
@@ -558,6 +558,157 @@ export async function submitIntakeForm(
     void _ignored;
     return out;
   });
+}
+
+/* ── organizations (shared workspaces) ─────────────────────────────── */
+
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: "owner" | "admin" | "member";
+}
+
+export async function listOrganizations(
+  ctx: CoreContext,
+  userId: string,
+): Promise<OrganizationSummary[]> {
+  const rows = await ctx.db
+    .select({
+      id: workspaces.id,
+      name: workspaces.name,
+      slug: workspaces.slug,
+      role: memberships.role,
+    })
+    .from(memberships)
+    .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+    .where(eq(memberships.userId, userId));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    role: r.role,
+  }));
+}
+
+export async function createOrganization(
+  ctx: CoreContext,
+  session: Session,
+  name: string,
+): Promise<{ id: string; name: string; slug: string }> {
+  const userId = session.actor.userId;
+  if (!userId) throw new CoreError("no user in session", { status: 400 });
+  const trimmed = name.trim();
+  if (!trimmed) throw new CoreError("organization name is required", { code: "validation_error", status: 422 });
+  const created = await provisionOwnerWorkspace(ctx, {
+    userId,
+    name: trimmed,
+    slugSeed: trimmed,
+  });
+  await logActivity(ctx, ctx.db, {
+    workspaceId: created.workspaceId,
+    entityType: "workspace",
+    entityId: created.workspaceId,
+    type: "org.created",
+    summary: `Created organization ${trimmed}`,
+    actor: "user",
+    actorUserId: userId,
+  });
+  return { id: created.workspaceId, name: trimmed, slug: created.workspaceSlug };
+}
+
+export async function searchAccounts(ctx: CoreContext, session: Session, query: string) {
+  await assertPermission(ctx, session, "manage_team");
+  const q = query.trim().replace(/%/g, "");
+  if (q.length < 2) return [];
+  const pattern = `%${q}%`;
+  return ctx.db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(or(ilike(users.name, pattern), ilike(users.email, pattern)))
+    .limit(8);
+}
+
+export async function addMember(
+  ctx: CoreContext,
+  session: Session,
+  input: { userId: string; role?: "admin" | "member" },
+) {
+  await assertPermission(ctx, session, "manage_team");
+  const role = input.role ?? "member";
+  if (role !== "admin" && role !== "member") {
+    throw new CoreError("role must be admin or member", { code: "validation_error", status: 422 });
+  }
+  const [person] = await ctx.db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+  if (!person) throw new CoreError("that account was not found", { status: 404 });
+  const [already] = await ctx.db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.workspaceId, session.workspaceId), eq(memberships.userId, person.id)))
+    .limit(1);
+  if (already) {
+    throw new CoreError("that person is already on this organization", { code: "conflict", status: 409 });
+  }
+  await ctx.db.insert(memberships).values({
+    workspaceId: session.workspaceId,
+    userId: person.id,
+    role,
+  });
+  await logActivity(ctx, ctx.db, {
+    workspaceId: session.workspaceId,
+    entityType: "workspace",
+    entityId: session.workspaceId,
+    type: "org.member_added",
+    summary: `${person.name} was added to the organization`,
+    actor: session.actor.userId ? "user" : "system",
+    actorUserId: session.actor.userId,
+    data: { userId: person.id, role },
+  });
+  return { id: person.id, name: person.name, email: person.email, role };
+}
+
+async function countOwners(ctx: CoreContext, workspaceId: string): Promise<number> {
+  const [row] = await ctx.db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(memberships)
+    .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.role, "owner")));
+  return row?.n ?? 0;
+}
+
+export async function updateMemberRole(
+  ctx: CoreContext,
+  session: Session,
+  userId: string,
+  role: "owner" | "admin" | "member",
+) {
+  await assertPermission(ctx, session, "manage_team");
+  const [current] = await ctx.db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.workspaceId, session.workspaceId), eq(memberships.userId, userId)))
+    .limit(1);
+  if (!current) throw new CoreError("member not found", { status: 404 });
+  if (current.role === "owner" && role !== "owner" && (await countOwners(ctx, session.workspaceId)) <= 1) {
+    throw new CoreError("the organization needs at least one owner", { code: "conflict", status: 409 });
+  }
+  await ctx.db
+    .update(memberships)
+    .set({ role })
+    .where(eq(memberships.id, current.id));
+}
+
+export async function removeMember(ctx: CoreContext, session: Session, userId: string) {
+  await assertPermission(ctx, session, "manage_team");
+  const [current] = await ctx.db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.workspaceId, session.workspaceId), eq(memberships.userId, userId)))
+    .limit(1);
+  if (!current) throw new CoreError("member not found", { status: 404 });
+  if (current.role === "owner" && (await countOwners(ctx, session.workspaceId)) <= 1) {
+    throw new CoreError("the organization needs at least one owner", { code: "conflict", status: 409 });
+  }
+  await ctx.db.delete(memberships).where(eq(memberships.id, current.id));
 }
 
 /* ── RBAC permission sets ──────────────────────────────────────────── */

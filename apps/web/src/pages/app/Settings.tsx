@@ -4,6 +4,7 @@ import { api, apiUrl } from "../../lib/api";
 import { Badge, Button, Field, PageHeader, SegmentedControl, Select, Spinner, inputCls, cx } from "../../components/ui";
 import AutomationsTab from "./settings-tabs/AutomationsTab";
 import WebhooksTab from "./settings-tabs/WebhooksTab";
+import TeamTab from "./settings-tabs/TeamTab";
 
 interface Stage { id: string; name: string; kind: string; position: number }
 interface Pipeline { id: string; stages: Stage[] }
@@ -15,7 +16,7 @@ interface ApiKey { id: string; name: string; prefix: string; lastUsedAt: string 
 interface IntakeForm { id: string; name: string; slug: string; publicUrl?: string }
 interface WorkspaceInfo { name: string; slug: string; plan: string; aiCreditsBalance: number; members: Array<{ id: string; name: string; email: string; role: string }> }
 
-type Tab = "pipeline" | "fields" | "keys" | "forms" | "automations" | "webhooks" | "integrations" | "audit" | "security";
+type Tab = "pipeline" | "team" | "fields" | "keys" | "forms" | "automations" | "webhooks" | "integrations" | "audit" | "security";
 
 export default function Settings() {
   const [tabRaw, setTab] = useState<Tab | null>(null);
@@ -24,7 +25,7 @@ export default function Settings() {
 
   const meQ = useQuery({
     queryKey: ["me"],
-    queryFn: () => api.get<{ workspace: WorkspaceInfo; permissions?: string[] }>("/me"),
+    queryFn: () => api.get<{ workspace: WorkspaceInfo; permissions?: string[]; actor?: { userId: string | null } }>("/me"),
   });
   const wsQ = { data: meQ.data ? { workspace: meQ.data.workspace } : undefined };
   const perms = new Set(meQ.data?.permissions ?? []);
@@ -80,6 +81,7 @@ export default function Settings() {
           onChange={setTab}
           options={([
             { value: "pipeline", label: "Stages" },
+            { value: "team", label: "Team" },
             { value: "fields", label: "Fields", show: can("manage_fields") },
             { value: "automations", label: "Automations", show: can("manage_automations") },
             { value: "webhooks", label: "Webhooks", show: can("manage_webhooks") },
@@ -118,6 +120,14 @@ export default function Settings() {
             <Button type="submit" variant="outline">Add stage</Button>
           </form>
         </section>
+      )}
+
+      {tab === "team" && (
+        <TeamTab
+          canManage={can("manage_team")}
+          members={ws?.members ?? []}
+          selfId={meQ.data?.actor?.userId ?? null}
+        />
       )}
 
       {tab === "fields" && (

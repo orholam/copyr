@@ -7,7 +7,46 @@ const routes: FastifyPluginAsync = async (app) => {
 
   app.get("/me", async (req) => {
     const ws = await core().session.getWorkspace(core().ctx, req.session!.workspaceId);
-    return { workspace: ws, actor: req.session!.actor };
+    const userId = req.session!.actor.userId;
+    const organizations = userId
+      ? await core().session.listOrganizations(core().ctx, userId)
+      : [];
+    const permissions = [...(await core().session.memberPermissions(core().ctx, req.session!))];
+    return { workspace: ws, actor: req.session!.actor, organizations, permissions };
+  });
+
+  app.post("/organizations", async (req) => {
+    const input = z.object({ name: z.string().min(1).max(80) }).parse(req.body);
+    return core().session.createOrganization(core().ctx, req.session!, input.name);
+  });
+
+  app.get("/organizations/accounts", async (req) => {
+    const q = z.object({ q: z.string().default("") }).parse(req.query);
+    const items = await core().session.searchAccounts(core().ctx, req.session!, q.q);
+    return { items };
+  });
+
+  app.post("/organizations/members", async (req) => {
+    const input = z
+      .object({
+        userId: z.string().uuid(),
+        role: z.enum(["admin", "member"]).default("member"),
+      })
+      .parse(req.body);
+    return core().session.addMember(core().ctx, req.session!, input);
+  });
+
+  app.patch("/organizations/members/:userId", async (req) => {
+    const { userId } = z.object({ userId: z.string().uuid() }).parse(req.params);
+    const input = z.object({ role: z.enum(["owner", "admin", "member"]) }).parse(req.body);
+    await core().session.updateMemberRole(core().ctx, req.session!, userId, input.role);
+    return { ok: true };
+  });
+
+  app.delete("/organizations/members/:userId", async (req) => {
+    const { userId } = z.object({ userId: z.string().uuid() }).parse(req.params);
+    await core().session.removeMember(core().ctx, req.session!, userId);
+    return { ok: true };
   });
 
   /* ── credits ─────────────────────────────────────────────────── */
