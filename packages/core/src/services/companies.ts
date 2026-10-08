@@ -8,6 +8,7 @@ import type {
 } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapCompany } from "../mappers.js";
+import { loadSyndicatePeople } from "./syndicate.js";
 import { logActivity } from "../activity.js";
 import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
@@ -142,8 +143,9 @@ export async function listCompanies(
       return query.sector!.some((s) => s.toLowerCase() === String(sector).toLowerCase());
     });
   }
+  const people = await loadSyndicatePeople(ctx.db, filtered.map((r) => r.id));
   return {
-    items: filtered.map((r) => mapCompany(r, fieldMaps.get(r.id) ?? {})),
+    items: filtered.map((r) => mapCompany(r, fieldMaps.get(r.id) ?? {}, people.get(r.id))),
     total,
   };
 }
@@ -155,7 +157,8 @@ export async function getCompany(
 ): Promise<CompanyDto> {
   const row = await getCompanyRow(ctx, ctx.db, session.workspaceId, companyId);
   const fields = await loadFieldMaps(ctx, session.workspaceId, "company", [companyId]);
-  return mapCompany(row, fields.get(companyId) ?? {});
+  const people = await loadSyndicatePeople(ctx.db, [companyId]);
+  return mapCompany(row, fields.get(companyId) ?? {}, people.get(companyId));
 }
 
 export async function createCompany(
@@ -210,8 +213,12 @@ export async function createCompany(
         stageId: stage.id,
         ownerUserId: input.ownerUserId ?? null,
         roundStage: input.roundStage ?? null,
+        roundLabel: input.roundLabel ?? null,
         askAmount: input.askAmount != null ? String(input.askAmount) : null,
         valuation: input.valuation != null ? String(input.valuation) : null,
+        firmInvested: input.firmInvested ?? null,
+        syndicateStatus: input.syndicateStatus ?? null,
+        submittedAt: input.submittedAt ? new Date(input.submittedAt) : null,
         priority: input.priority ?? 0,
         position,
         nextStepAt: input.nextStepAt ? new Date(input.nextStepAt) : null,
@@ -295,6 +302,7 @@ export async function updateCompany(
       askAmount,
       valuation,
       nextStepAt,
+      submittedAt,
       ...rest
     } = patch;
     void _ignored;
@@ -310,6 +318,9 @@ export async function updateCompany(
         ...(valuation !== undefined ? { valuation: valuation === null ? null : String(valuation) } : {}),
         ...(nextStepAt !== undefined
           ? { nextStepAt: nextStepAt === null ? null : new Date(nextStepAt) }
+          : {}),
+        ...(submittedAt !== undefined
+          ? { submittedAt: submittedAt === null ? null : new Date(submittedAt) }
           : {}),
         updatedAt: new Date(),
       })

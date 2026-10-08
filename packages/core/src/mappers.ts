@@ -14,6 +14,7 @@ import type {
 import type {
   CompanyDto,
   DealDto,
+  DealParticipantDto,
   StageDto,
   PipelineDto,
   CustomFieldDto,
@@ -52,9 +53,26 @@ export function coerceFieldValue(v: unknown): FieldValuePrimitive | null {
   return String(v);
 }
 
+export interface SyndicatePeople {
+  submittedBy: DealParticipantDto | null;
+  upvoters: DealParticipantDto[];
+}
+
+function syndicateOf(row: CompanyRow, people?: SyndicatePeople) {
+  return {
+    roundLabel: row.roundLabel ?? null,
+    firmInvested: row.firmInvested ?? null,
+    syndicateStatus: row.syndicateStatus ?? null,
+    submittedAt: toIso(row.submittedAt),
+    submittedBy: people?.submittedBy ?? null,
+    upvoters: people?.upvoters ?? [],
+  };
+}
+
 export function mapCompany(
   row: CompanyRow,
   fields: Record<string, unknown> = {},
+  people?: SyndicatePeople,
 ): CompanyDto {
   const out: Record<string, FieldValuePrimitive | null> = {};
   for (const [k, v] of Object.entries(fields)) out[k] = coerceFieldValue(v);
@@ -76,8 +94,9 @@ export function mapCompany(
     stageId: row.stageId,
     ownerUserId: row.ownerUserId,
     roundStage: row.roundStage,
-    askAmount: row.askAmount === null ? null : Number(row.askAmount),
-    valuation: row.valuation === null ? null : Number(row.valuation),
+    askAmount: row.askAmount == null ? null : Number(row.askAmount),
+    valuation: row.valuation == null ? null : Number(row.valuation),
+    ...syndicateOf(row, people),
     priority: row.priority,
     position: row.position,
     nextStepAt: toIso(row.nextStepAt),
@@ -106,6 +125,7 @@ export function mapDeal(
   row: CompanyRow,
   _company?: CompanyRow,
   fields: Record<string, unknown> = {},
+  people?: SyndicatePeople,
 ): DealDto {
   const company = _company ?? row;
   const out: Record<string, FieldValuePrimitive | null> = {};
@@ -118,8 +138,9 @@ export function mapDeal(
     ownerUserId: row.ownerUserId,
     title: row.name,
     roundStage: row.roundStage,
-    askAmount: row.askAmount === null ? null : Number(row.askAmount),
-    valuation: row.valuation === null ? null : Number(row.valuation),
+    askAmount: row.askAmount == null ? null : Number(row.askAmount),
+    valuation: row.valuation == null ? null : Number(row.valuation),
+    ...syndicateOf(row, people),
     priority: row.priority,
     tags: row.tags ?? [],
     position: row.position,

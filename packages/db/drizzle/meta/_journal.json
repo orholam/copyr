@@ -57,6 +57,13 @@
       "when": 1789754105600,
       "tag": "0007_dapper_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791497641376,
+      "tag": "0008_productive_vector",
+      "breakpoints": true
     }
   ]
 }

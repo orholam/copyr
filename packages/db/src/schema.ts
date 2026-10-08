@@ -44,6 +44,11 @@ export const companyStatus = pgEnum("company_status", [
 
 export const stageKind = pgEnum("stage_kind", ["active", "won", "lost"]);
 
+/** Syndicate review state from an external deal archive (queued vs presented). */
+export const syndicateStatus = pgEnum("syndicate_status", ["queued", "presented"]);
+
+export const participantRole = pgEnum("participant_role", ["submitter", "upvote"]);
+
 export const fieldType = pgEnum("field_type", [
   "text",
   "long_text",
@@ -306,8 +311,13 @@ export const companies = pgTable(
       onDelete: "set null",
     }),
     roundStage: text("round_stage"),
+    /** Original free-text round, kept verbatim when it won't fit ask + stage. */
+    roundLabel: text("round_label"),
     askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
     valuation: numeric("valuation", { precision: 14, scale: 2 }),
+    firmInvested: boolean("firm_invested"),
+    syndicateStatus: syndicateStatus("syndicate_status"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
     priority: integer("priority").notNull().default(0),
     /** fractional-index ordering within stage for kanban */
     position: text("position").notNull().default("a0"),
@@ -323,6 +333,33 @@ export const companies = pgTable(
     index("companies_ws_domain_idx").on(t.workspaceId, t.domain),
     index("companies_ws_pipeline_idx").on(t.workspaceId, t.pipelineId),
     index("companies_stage_idx").on(t.stageId, t.position),
+  ],
+);
+
+/**
+ * People attached to a deal from outside the workspace: who submitted it
+ * and who upvoted it. Not company contacts (those are founders/operators).
+ */
+export const dealParticipants = pgTable(
+  "deal_participants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    role: participantRole("role").notNull(),
+    name: text("name").notNull(),
+    firm: text("firm"),
+    email: text("email"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("deal_participants_company_idx").on(t.companyId, t.role),
+    index("deal_participants_ws_idx").on(t.workspaceId),
   ],
 );
 

@@ -9,7 +9,31 @@ import {
 import {
   IconArrowUpRight, IconBot, IconDoc, IconMapPin, IconSpark, IconUser,
 } from "../../components/icons";
+import { isScreenTag, parseScreenTag, stripScreenTags, type ScreenRec } from "../../lib/screenTag";
 
+function ScreenBadge({
+  recommendation,
+  fitScore,
+}: {
+  recommendation: ScreenRec;
+  fitScore?: number | null;
+}) {
+  const tone = recommendation === "advance" ? "green" : recommendation === "pass" ? "red" : "amber";
+  return (
+    <Badge tone={tone}>
+      {recommendation.toUpperCase()}
+      {fitScore != null ? ` · ${fitScore}` : ""}
+    </Badge>
+  );
+}
+
+interface Participant {
+  id: string;
+  name: string;
+  firm: string | null;
+  email: string | null;
+  occurredAt: string | null;
+}
 interface Company {
   id: string;
   name: string;
@@ -24,8 +48,14 @@ interface Company {
   source: string;
   stageId: string;
   roundStage: string | null;
+  roundLabel: string | null;
   askAmount: number | null;
   valuation: number | null;
+  firmInvested: boolean | null;
+  syndicateStatus: "queued" | "presented" | null;
+  submittedAt: string | null;
+  submittedBy: Participant | null;
+  upvoters: Participant[];
   priority: number;
   nextStepAt: string | null;
   fields: Record<string, string | number | boolean | string[] | null>;
@@ -175,6 +205,8 @@ export default function CompanyDetail() {
   const allStages = stagesQ.data?.flatMap((p) => p.stages) ?? [];
   const stage = allStages.find((s) => s.id === c.stageId);
   const fieldEntries = Object.entries(c.fields ?? {}).filter(([, v]) => v !== null && v !== undefined);
+  const screen = parseScreenTag(c.tags);
+  const userTags = stripScreenTags(c.tags ?? []);
 
   return (
     <div className="animate-fade-up mx-auto max-w-5xl pb-10">
@@ -227,6 +259,13 @@ export default function CompanyDetail() {
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
+            {screen && (
+              <ScreenBadge recommendation={screen.recommendation} fitScore={screen.fitScore} />
+            )}
+            {c.syndicateStatus && (
+              <Badge tone={c.syndicateStatus === "presented" ? "green" : "amber"}>{c.syndicateStatus}</Badge>
+            )}
+            {c.firmInvested && <Badge tone="indigo">Firm invested</Badge>}
             {stage && (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-paper-900/[0.11] bg-paper-100 px-2 py-1 text-xs font-medium text-paper-800">
                 <span className={cx("h-1.5 w-1.5 rounded-full", stage.kind === "won" ? "bg-emerald-400/80" : stage.kind === "lost" ? "bg-red-400/80" : "bg-brand-400")} />
@@ -238,9 +277,16 @@ export default function CompanyDetail() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
-          <Meta label="Round" value={c.roundStage ?? "—"} />
+          <Meta label="Round" value={c.roundLabel || c.roundStage || "—"} />
           <Meta label="Ask" value={money(c.askAmount)} accent />
           <Meta label="Valuation" value={money(c.valuation)} />
+          {c.submittedAt && (
+            <Meta
+              label="Submitted"
+              value={new Date(c.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            />
+          )}
+          {(c.upvoters?.length ?? 0) > 0 && <Meta label="Votes" value={String(c.upvoters.length)} accent />}
           {c.priority >= 4 && <Meta label="Priority" value={c.priority >= 5 ? "High" : "Elevated"} accent={c.priority >= 5} />}
           {c.nextStepAt && (
             <Meta
@@ -284,6 +330,10 @@ export default function CompanyDetail() {
         <p className="mt-4 max-w-2xl text-[13px] leading-relaxed text-paper-600">{c.description}</p>
       )}
 
+      {(c.submittedBy || (c.upvoters?.length ?? 0) > 0 || c.roundLabel) && (
+        <SyndicatePanel company={c} />
+      )}
+
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_300px]">
         <div className="space-y-5">
           {fieldEntries.length > 0 && (
@@ -302,10 +352,20 @@ export default function CompanyDetail() {
           )}
 
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {(c.tags ?? []).map((t) => (
+            {userTags.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 rounded-full bg-paper-200/70 px-2 py-0.5 text-[11px] font-medium text-paper-700">
                 #{t}
-                <button className="text-paper-400 transition hover:text-red-500" onClick={() => saveTags.mutate((c.tags ?? []).filter((x) => x !== t))}>×</button>
+                <button
+                  className="text-paper-400 transition hover:text-red-500"
+                  onClick={() =>
+                    saveTags.mutate([
+                      ...stripScreenTags(c.tags ?? []).filter((x) => x !== t),
+                      ...(c.tags ?? []).filter(isScreenTag),
+                    ])
+                  }
+                >
+                  ×
+                </button>
               </span>
             ))}
             <input
@@ -313,7 +373,11 @@ export default function CompanyDetail() {
               onChange={(e) => setNewTag(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && newTag.trim()) {
-                  saveTags.mutate([...(c.tags ?? []), newTag.trim().toLowerCase()]);
+                  saveTags.mutate([
+                    ...stripScreenTags(c.tags ?? []),
+                    newTag.trim().toLowerCase(),
+                    ...(c.tags ?? []).filter(isScreenTag),
+                  ]);
                   setNewTag("");
                 }
               }}
@@ -416,6 +480,7 @@ export default function CompanyDetail() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20">
+          <CompanyThesisScreen companyId={id!} tags={c.tags} />
           <CompanyDiligenceTasks companyId={id!} />
           <CompanyWorkflowsStrip />
           <div className="panel p-3.5">
@@ -500,6 +565,73 @@ export default function CompanyDetail() {
         />
       </Modal>
     </div>
+  );
+}
+
+function SyndicatePanel({ company }: { company: Company }) {
+  const votes = company.upvoters ?? [];
+  return (
+    <section className="mt-4 overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-paper-900/[0.06] px-5 py-4">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Syndicate</p>
+          <p className="mt-1 font-serif text-[18px] font-semibold tracking-tight text-paper-900">
+            {company.roundLabel || company.roundStage || "Round not specified"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {company.syndicateStatus && (
+            <Badge tone={company.syndicateStatus === "presented" ? "green" : "amber"}>{company.syndicateStatus}</Badge>
+          )}
+          {company.firmInvested === true && <Badge tone="indigo">A member firm invested</Badge>}
+          {company.firmInvested === false && <Badge tone="slate">No firm invested</Badge>}
+          {votes.length > 0 && <Badge tone="slate">{votes.length} vote{votes.length === 1 ? "" : "s"}</Badge>}
+        </div>
+      </div>
+      <div className="grid gap-0 lg:grid-cols-[240px_1fr]">
+        <div className="border-b border-paper-900/[0.06] px-5 py-4 lg:border-b-0 lg:border-r">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Submitted by</p>
+          {company.submittedBy ? (
+            <div className="mt-2.5 flex items-start gap-2.5">
+              <Avatar name={company.submittedBy.name} size={32} />
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-semibold text-paper-900">{company.submittedBy.name}</p>
+                {company.submittedBy.firm && <p className="truncate text-xs text-paper-500">{company.submittedBy.firm}</p>}
+                {company.submittedBy.email && (
+                  <a href={`mailto:${company.submittedBy.email}`} className="truncate text-xs text-brand-700 hover:underline">
+                    {company.submittedBy.email}
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-[13px] text-paper-400">Unknown</p>
+          )}
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Upvotes</p>
+          {votes.length === 0 ? (
+            <p className="mt-2 text-[13px] text-paper-400">No votes yet</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-paper-900/[0.05]">
+              {votes.map((v) => (
+                <li key={v.id} className="flex items-center gap-2.5 py-2">
+                  <Avatar name={v.name} size={26} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-paper-900">
+                      {v.name}
+                      {v.firm ? <span className="font-normal text-paper-500"> · {v.firm}</span> : null}
+                    </p>
+                    {v.email && <p className="truncate text-[11px] text-paper-400">{v.email}</p>}
+                  </div>
+                  {v.occurredAt && <span className="shrink-0 text-[11px] text-paper-400">{timeAgo(v.occurredAt)}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -656,22 +788,92 @@ function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
   );
 }
 
+function CompanyThesisScreen({
+  companyId,
+  tags,
+}: {
+  companyId: string;
+  tags?: string[];
+}) {
+  const activityQ = useQuery({
+    queryKey: ["activity", companyId],
+    queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${companyId}&limit=30`),
+  });
+  const stamp = parseScreenTag(tags);
+  const screenActivity = (activityQ.data?.items ?? []).find(
+    (a) =>
+      a.type === "agent_run.completed" &&
+      a.data?.output &&
+      typeof a.data.output === "object" &&
+      "recommendation" in (a.data.output as object),
+  );
+  const output =
+    screenActivity?.data?.output && typeof screenActivity.data.output === "object"
+      ? (screenActivity.data.output as Record<string, unknown>)
+      : null;
+  const recommendation =
+    (typeof output?.recommendation === "string" ? output.recommendation : stamp?.recommendation) as
+      | ScreenRec
+      | undefined;
+  const fitScore =
+    typeof output?.fitScore === "number"
+      ? output.fitScore
+      : stamp?.fitScore ?? null;
+
+  if (!recommendation && !activityQ.isLoading) return null;
+
+  return (
+    <div className="panel p-3.5">
+      <h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
+        <IconBot width={13} height={13} /> Thesis screen
+      </h2>
+      {activityQ.isLoading && !recommendation ? (
+        <Skeleton className="h-12 w-full" />
+      ) : recommendation ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <ScreenBadge
+              recommendation={recommendation}
+              fitScore={typeof fitScore === "number" ? fitScore : null}
+            />
+            <Link to="/app/automations" className="text-[11px] font-medium text-brand-700 hover:underline">
+              Agents
+            </Link>
+          </div>
+          {typeof output?.summary === "string" && (
+            <p className="text-[12px] leading-snug text-paper-600">{output.summary}</p>
+          )}
+          {Array.isArray(output?.reasons) && (output.reasons as unknown[]).length > 0 && (
+            <ul className="space-y-0.5 text-[11px] text-paper-500">
+              {(output.reasons as unknown[]).slice(0, 3).map((r, i) => (
+                <li key={i}>+ {String(r)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Compact pointer to event rules — not a second workflows editor. */
 function CompanyWorkflowsStrip() {
   return (
     <div className="panel p-3.5">
       <h2 className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
-        <IconBot width={13} height={13} /> Automations
+        <IconBot width={13} height={13} /> Agents & workflows
       </h2>
       <p className="mb-2 text-[12px] leading-snug text-paper-500">
-        Stage moves and new companies can fire workflows (e.g. diligence checklist, thesis screen).
+        New companies are enriched and thesis-screened automatically. Stage moves can kick off diligence.
       </p>
-      <Link
-        to="/app/workflows"
-        className="text-[12px] font-medium text-brand-700 hover:underline"
-      >
-        Manage workflows →
-      </Link>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        <Link to="/app/workflows" className="text-[12px] font-medium text-brand-700 hover:underline">
+          Workflows →
+        </Link>
+        <Link to="/app/automations" className="text-[12px] font-medium text-brand-700 hover:underline">
+          Agents →
+        </Link>
+      </div>
     </div>
   );
 }

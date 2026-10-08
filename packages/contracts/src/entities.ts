@@ -101,6 +101,29 @@ export const createCustomFieldShape = createCustomFieldBase.shape;
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export const updateCustomFieldSchema = createCustomFieldBase.partial();
 
+/* ── syndicate participants ────────────────────────────────────────── */
+
+export const syndicateStatusSchema = z.enum(["queued", "presented"]);
+export type SyndicateStatus = z.infer<typeof syndicateStatusSchema>;
+
+export const dealParticipantDto = z.object({
+  id: idSchema,
+  role: z.enum(["submitter", "upvote"]),
+  name: z.string(),
+  firm: z.string().nullable(),
+  email: z.string().nullable(),
+  occurredAt: z.string().nullable(),
+});
+export type DealParticipantDto = z.infer<typeof dealParticipantDto>;
+
+export const participantInputSchema = z.object({
+  name: z.string().min(1).max(200),
+  firm: z.string().max(200).nullish(),
+  email: z.string().email().nullish(),
+  occurredAt: z.string().datetime({ offset: true }).nullish(),
+});
+export type ParticipantInput = z.infer<typeof participantInputSchema>;
+
 /* ── companies ─────────────────────────────────────────────────────── */
 
 export const companyDto = z.object({
@@ -121,8 +144,14 @@ export const companyDto = z.object({
   stageId: idSchema,
   ownerUserId: idSchema.nullable(),
   roundStage: z.string().nullable(),
+  roundLabel: z.string().nullable(),
   askAmount: z.number().nullable(),
   valuation: z.number().nullable(),
+  firmInvested: z.boolean().nullable(),
+  syndicateStatus: syndicateStatusSchema.nullable(),
+  submittedAt: z.string().nullable(),
+  submittedBy: dealParticipantDto.nullable(),
+  upvoters: z.array(dealParticipantDto),
   priority: z.number().int(),
   position: z.string(),
   nextStepAt: z.string().nullable(),
@@ -153,8 +182,12 @@ export const createCompanySchema = z.object({
   stageId: idSchema.optional(),
   ownerUserId: idSchema.nullable().optional(),
   roundStage: z.string().nullish(),
+  roundLabel: z.string().max(500).nullish(),
   askAmount: z.number().nonnegative().nullable().optional(),
   valuation: z.number().nonnegative().nullable().optional(),
+  firmInvested: z.boolean().nullable().optional(),
+  syndicateStatus: syndicateStatusSchema.nullish(),
+  submittedAt: z.string().datetime({ offset: true }).nullish(),
   priority: z.number().int().min(0).max(5).optional(),
   nextStepAt: z.string().datetime({ offset: true }).nullish(),
   sourceRef: z.string().optional(),
@@ -186,8 +219,14 @@ export const dealDto = z.object({
   ownerUserId: idSchema.nullable(),
   title: z.string(),
   roundStage: z.string().nullable(),
+  roundLabel: z.string().nullable(),
   askAmount: z.number().nullable(),
   valuation: z.number().nullable(),
+  firmInvested: z.boolean().nullable(),
+  syndicateStatus: syndicateStatusSchema.nullable(),
+  submittedAt: z.string().nullable(),
+  submittedBy: dealParticipantDto.nullable(),
+  upvoters: z.array(dealParticipantDto),
   priority: z.number().int(),
   tags: z.array(z.string()),
   position: z.string(),
@@ -238,8 +277,14 @@ export const createDealSchema = z.object({
   ownerUserId: idSchema.nullable().optional(),
   title: z.string().optional(),
   roundStage: roundStageEnum.or(z.string()).nullish(),
+  roundLabel: z.string().max(500).nullish(),
   askAmount: z.number().nonnegative().nullable().optional(),
   valuation: z.number().nonnegative().nullable().optional(),
+  firmInvested: z.boolean().nullable().optional(),
+  syndicateStatus: syndicateStatusSchema.nullish(),
+  submittedAt: z.string().datetime({ offset: true }).nullish(),
+  submittedBy: participantInputSchema.nullish(),
+  upvoters: z.array(participantInputSchema).optional(),
   priority: z.number().int().min(0).max(5).default(0),
   tags: z.array(z.string()).optional(),
   nextStepAt: z.string().datetime({ offset: true }).nullish(),
@@ -269,8 +314,14 @@ export const updateDealSchema = z.object({
   ownerUserId: idSchema.nullable().optional(),
   title: z.string().optional(),
   roundStage: z.string().nullable().optional(),
+  roundLabel: z.string().max(500).nullable().optional(),
   askAmount: z.number().nullable().optional(),
   valuation: z.number().nullable().optional(),
+  firmInvested: z.boolean().nullable().optional(),
+  syndicateStatus: syndicateStatusSchema.nullable().optional(),
+  submittedAt: z.string().datetime({ offset: true }).nullable().optional(),
+  submittedBy: participantInputSchema.nullable().optional(),
+  upvoters: z.array(participantInputSchema).optional(),
   priority: z.number().int().optional(),
   tags: z.array(z.string()).optional(),
   nextStepAt: z.string().datetime({ offset: true }).nullable().optional(),
@@ -298,6 +349,7 @@ export const listDealsQuerySchema = z.object({
   ownerId: z.array(idSchema).optional(),
   source: z.array(entitySourceSchema).optional(),
   roundStage: z.array(z.string()).optional(),
+  syndicateStatus: syndicateStatusSchema.optional(),
   minAsk: z.coerce.number().optional(),
   maxAsk: z.coerce.number().optional(),
   createdAfter: z.string().optional(),

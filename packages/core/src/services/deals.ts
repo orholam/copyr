@@ -22,6 +22,8 @@ import type {
 } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapDeal } from "../mappers.js";
+import { parseRoundLabel } from "../roundLabel.js";
+import { loadSyndicatePeople, replaceParticipants } from "./syndicate.js";
 import { logActivity } from "../activity.js";
 import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
@@ -49,13 +51,12 @@ async function hydrate(
   session: Session,
   rows: Array<typeof companies.$inferSelect>,
 ): Promise<DealDto[]> {
-  const fields = await loadFieldMaps(
-    ctx,
-    session.workspaceId,
-    "company",
-    rows.map((r) => r.id),
-  );
-  return rows.map((row) => mapDeal(row, row, fields.get(row.id) ?? {}));
+  const ids = rows.map((r) => r.id);
+  const [fields, people] = await Promise.all([
+    loadFieldMaps(ctx, session.workspaceId, "company", ids),
+    loadSyndicatePeople(ctx.db, ids),
+  ]);
+  return rows.map((row) => mapDeal(row, row, fields.get(row.id) ?? {}, people.get(row.id)));
 }
 
 export async function getDeal(
@@ -91,6 +92,7 @@ export async function listDeals(
     conds.push(sql`${companies.tags} ?| array[${sql.raw(quoted)}]::text[]`);
   }
   if (query.roundStage?.length) conds.push(inArray(companies.roundStage, query.roundStage));
+  if (query.syndicateStatus) conds.push(eq(companies.syndicateStatus, query.syndicateStatus));
   if (query.minAsk !== undefined) conds.push(gte(companies.askAmount, String(query.minAsk)));
   if (query.maxAsk !== undefined) conds.push(lte(companies.askAmount, String(query.maxAsk)));
   if (query.createdAfter) conds.push(gte(companies.createdAt, new Date(query.createdAfter)));
@@ -152,6 +154,11 @@ export async function createDeal(
     throw new CoreError("companyId or companyName required", { code: "missing_company" });
   }
 
+  const parsedRound = input.roundLabel ? parseRoundLabel(input.roundLabel) : null;
+  const roundStage = input.roundStage ?? parsedRound?.roundStage ?? undefined;
+  const askAmount = input.askAmount !== undefined ? input.askAmount : parsedRound?.askAmount ?? undefined;
+  const valuation = input.valuation !== undefined ? input.valuation : parsedRound?.valuation ?? undefined;
+
   // normalize website → domain
   const rawDomain = (input.domain ?? input.website ?? "").trim();
   const normalizedDomain = rawDomain
@@ -177,9 +184,13 @@ export async function createDeal(
         pipelineId: input.pipelineId,
         stageId: input.stageId,
         ownerUserId: input.ownerUserId,
-        roundStage: input.roundStage ?? undefined,
-        askAmount: input.askAmount,
-        valuation: input.valuation,
+        roundStage,
+        roundLabel: input.roundLabel ?? undefined,
+        askAmount,
+        valuation,
+        firmInvested: input.firmInvested,
+        syndicateStatus: input.syndicateStatus ?? undefined,
+        submittedAt: input.submittedAt ?? undefined,
         priority: input.priority,
         nextStepAt: input.nextStepAt ?? undefined,
         sourceRef: input.sourceRef,
@@ -192,13 +203,24 @@ export async function createDeal(
     }
   }
 
+  if (input.submittedBy !== undefined || input.upvoters !== undefined) {
+    await replaceParticipants(ctx.db, session, companyId!, {
+      ...(input.submittedBy !== undefined ? { submittedBy: input.submittedBy } : {}),
+      ...(input.upvoters !== undefined ? { upvoters: input.upvoters } : {}),
+    });
+  }
+
   if (!companyCreated) {
     const patch: UpdateDealInput = {
       ...(input.stageId ? { stageId: input.stageId } : {}),
       ...(input.ownerUserId !== undefined ? { ownerUserId: input.ownerUserId } : {}),
-      ...(input.roundStage !== undefined ? { roundStage: input.roundStage } : {}),
-      ...(input.askAmount !== undefined ? { askAmount: input.askAmount } : {}),
-      ...(input.valuation !== undefined ? { valuation: input.valuation } : {}),
+      ...(roundStage !== undefined ? { roundStage } : {}),
+      ...(input.roundLabel !== undefined ? { roundLabel: input.roundLabel } : {}),
+      ...(askAmount !== undefined ? { askAmount } : {}),
+      ...(valuation !== undefined ? { valuation } : {}),
+      ...(input.firmInvested !== undefined ? { firmInvested: input.firmInvested } : {}),
+      ...(input.syndicateStatus !== undefined ? { syndicateStatus: input.syndicateStatus } : {}),
+      ...(input.submittedAt !== undefined ? { submittedAt: input.submittedAt } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.nextStepAt !== undefined ? { nextStepAt: input.nextStepAt } : {}),
       ...(input.fields ? { fields: input.fields } : {}),
@@ -222,7 +244,20 @@ export async function updateDeal(
 ): Promise<DealDto> {
   return ctx.db.transaction(async (tx) => {
     const row0 = await getDealRow(ctx, tx, session.workspaceId, dealId);
-    const { fields, archived, stageId, ownerUserId, nextStepAt, askAmount, valuation, title, ...rest } = patch;
+    const {
+      fields,
+      archived,
+      stageId,
+      ownerUserId,
+      nextStepAt,
+      askAmount,
+      valuation,
+      title,
+      submittedAt,
+      submittedBy,
+      upvoters,
+      ...rest
+    } = patch;
     void rest;
 
     let stageChangedStageName: string | null = null;
@@ -246,6 +281,12 @@ export async function updateDeal(
         ...(askAmount !== undefined ? { askAmount: askAmount === null ? null : String(askAmount) } : {}),
         ...(valuation !== undefined ? { valuation: valuation === null ? null : String(valuation) } : {}),
         ...(patch.roundStage !== undefined ? { roundStage: patch.roundStage } : {}),
+        ...(patch.roundLabel !== undefined ? { roundLabel: patch.roundLabel } : {}),
+        ...(patch.firmInvested !== undefined ? { firmInvested: patch.firmInvested } : {}),
+        ...(patch.syndicateStatus !== undefined ? { syndicateStatus: patch.syndicateStatus } : {}),
+        ...(submittedAt !== undefined
+          ? { submittedAt: submittedAt === null ? null : new Date(submittedAt) }
+          : {}),
         ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
         ...(patch.tags ? { tags: patch.tags } : {}),
         ...(nextStepAt !== undefined
@@ -256,6 +297,13 @@ export async function updateDeal(
       })
       .where(and(eq(companies.id, dealId), eq(companies.workspaceId, session.workspaceId)))
       .returning();
+
+    if (submittedBy !== undefined || upvoters !== undefined) {
+      await replaceParticipants(tx, session, dealId, {
+        ...(submittedBy !== undefined ? { submittedBy } : {}),
+        ...(upvoters !== undefined ? { upvoters } : {}),
+      });
+    }
 
     if (fields) {
       await setFieldValues(

@@ -229,7 +229,9 @@ export async function exportDeals(
   }
   const fieldKeys = [...new Set(items.flatMap((d: DealDto) => Object.keys(d.fields)))];
   const header = [
-    "deal_id", "company", "domain", "title", "round", "ask_usd", "stage", "source", "tags",
+    "deal_id", "company", "domain", "title", "round", "round_label", "ask_usd", "valuation_usd",
+    "syndicate_status", "firm_invested", "submitted_at", "submitted_by", "submitted_by_firm",
+    "upvotes", "upvoters", "stage", "source", "tags",
     ...fieldKeys.map((k) => `field:${k}`),
     "created_at",
   ];
@@ -240,7 +242,13 @@ export async function exportDeals(
   const lines = [header.join(",")];
   for (const d of items) {
     lines.push([
-      d.id, d.company.name, d.company.domain ?? "", d.title, d.roundStage ?? "", d.askAmount ?? "", stageNames.get(d.stageId) ?? "", d.source, (d.tags ?? []).join(";"),
+      d.id, d.company.name, d.company.domain ?? "", d.title, d.roundStage ?? "", d.roundLabel ?? "",
+      d.askAmount ?? "", d.valuation ?? "", d.syndicateStatus ?? "",
+      d.firmInvested == null ? "" : d.firmInvested ? "true" : "false",
+      d.submittedAt ?? "", d.submittedBy?.name ?? "", d.submittedBy?.firm ?? "",
+      d.upvoters?.length ?? 0,
+      (d.upvoters ?? []).map((v) => `${v.name}${v.firm ? ` (${v.firm})` : ""}`).join("; "),
+      stageNames.get(d.stageId) ?? "", d.source, (d.tags ?? []).join(";"),
       ...fieldKeys.map((k) => (d.fields[k] === undefined ? "" : Array.isArray(d.fields[k]) ? (d.fields[k] as string[]).join(";") : String(d.fields[k] ?? ""))),
       d.createdAt,
     ].map(csvEscape).join(","));

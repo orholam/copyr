@@ -24,18 +24,48 @@ import {
   Avatar, Badge, Button, EmptyState, ErrorState, PageHeader, SegmentedControl, Skeleton, cx, money, timeAgo,
 } from "../../components/ui";
 import { IconChevronLeft, IconChevronRight, IconFlame, IconPlus, IconSearch } from "../../components/icons";
+import { parseScreenTag, stripScreenTags, type ScreenRec } from "../../lib/screenTag";
+
+function ScreenChip({ recommendation, fitScore }: { recommendation: ScreenRec; fitScore: number | null }) {
+  const cls =
+    recommendation === "advance"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      : recommendation === "pass"
+        ? "border-red-300 bg-red-50 text-red-700"
+        : "border-amber-300 bg-amber-50 text-amber-800";
+  return (
+    <span className={cx("rounded-full border px-1.5 py-px text-[10px] font-bold uppercase tracking-wide", cls)}>
+      {recommendation}
+      {fitScore != null ? ` ${fitScore}` : ""}
+    </span>
+  );
+}
+
+interface Participant {
+  id: string;
+  name: string;
+  firm: string | null;
+  email: string | null;
+  occurredAt: string | null;
+}
 interface Deal {
   id: string;
   companyId: string;
   stageId: string;
   title: string;
   roundStage: string | null;
+  roundLabel: string | null;
   askAmount: number | null;
+  firmInvested: boolean | null;
+  syndicateStatus: "queued" | "presented" | null;
+  submittedAt: string | null;
+  submittedBy: Participant | null;
+  upvoters: Participant[];
   priority: number;
   tags: string[];
   source: string;
   updatedAt: string;
-  company: { id: string; name: string; domain: string | null; sector: string | null };
+  company: { id: string; name: string; domain: string | null; sector: string | null; description?: string | null };
   fields: Record<string, string | number | boolean | string[] | null>;
 }
 interface SavedView {
@@ -102,6 +132,10 @@ function SourceTag({ source }: { source: string }) {
 }
 
 function CardBody({ deal }: { deal: Deal }) {
+  const screen = parseScreenTag(deal.tags);
+  const tags = stripScreenTags(deal.tags ?? []).slice(0, 3);
+  const round = deal.roundLabel || deal.roundStage;
+  const votes = deal.upvoters?.length ?? 0;
   return (
     <>
       <div className="flex items-start gap-2.5">
@@ -109,19 +143,41 @@ function CardBody({ deal }: { deal: Deal }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13.5px] font-semibold leading-5 text-paper-900">{deal.company.name}</p>
           <p className="mt-0.5 truncate text-xs font-medium leading-4 text-paper-500">
-            {deal.company.sector ?? deal.title}
+            {deal.company.domain ?? deal.company.sector ?? deal.title}
           </p>
         </div>
         {deal.priority >= 4 && <IconFlame width={13} height={13} className="mt-1 shrink-0 text-orange-600" />}
       </div>
-      <div className="mt-2.5 flex items-center justify-between gap-2 pl-[42px]">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {deal.roundStage && <Badge tone="indigo">{deal.roundStage}</Badge>}
-        </div>
-        {deal.askAmount !== null && (
-          <span className="num shrink-0 text-[13px] font-bold tracking-tight text-paper-900">{money(deal.askAmount)}</span>
+      {round && (
+        <p className="mt-2 truncate pl-[42px] text-[12.5px] font-semibold tracking-tight text-paper-900" title={round}>
+          {round}
+        </p>
+      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-[42px]">
+        {deal.syndicateStatus && (
+          <Badge tone={deal.syndicateStatus === "presented" ? "green" : "amber"}>{deal.syndicateStatus}</Badge>
+        )}
+        {deal.firmInvested && <Badge tone="indigo">Invested</Badge>}
+        {deal.roundStage && deal.roundLabel && <Badge tone="slate">{deal.roundStage}</Badge>}
+        {screen && <ScreenChip recommendation={screen.recommendation} fitScore={screen.fitScore} />}
+        {votes > 0 && (
+          <span className="num ml-auto text-[11px] font-semibold text-paper-500">{votes} vote{votes === 1 ? "" : "s"}</span>
+        )}
+        {deal.askAmount !== null && !deal.roundLabel && (
+          <span className="num ml-auto text-[13px] font-bold tracking-tight text-paper-900">{money(deal.askAmount)}</span>
         )}
       </div>
+      {tags.length > 0 && (
+        <p className="mt-1.5 truncate pl-[42px] text-[10.5px] font-medium text-paper-400">
+          {tags.map((t) => `#${t}`).join("  ")}
+        </p>
+      )}
+      {deal.submittedBy && (
+        <p className="mt-1 truncate pl-[42px] text-[11px] text-paper-500">
+          via {deal.submittedBy.name}
+          {deal.submittedBy.firm ? ` · ${deal.submittedBy.firm}` : ""}
+        </p>
+      )}
     </>
   );
 }
@@ -243,6 +299,7 @@ export default function Pipeline() {
   const pipeline = pipelinesQ.data?.find((p) => p.isDefault) ?? pipelinesQ.data?.[0];
 
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [syndicate, setSyndicate] = useState<"all" | "queued" | "presented" | "invested">("all");
   const viewsQ = useQuery({
     queryKey: ["saved-views"],
     queryFn: () => api.get<SavedView[]>("/views"),
@@ -376,8 +433,10 @@ export default function Pipeline() {
     for (const [id, mv] of Object.entries(pendingMoves)) {
       items = reorderDeals(items, { id, stageId: mv.stageId, beforeDealId: mv.beforeDealId });
     }
+    if (syndicate === "invested") items = items.filter((d) => d.firmInvested === true);
+    else if (syndicate !== "all") items = items.filter((d) => d.syndicateStatus === syndicate);
     return items;
-  }, [dealsQ.data, pendingMoves]);
+  }, [dealsQ.data, pendingMoves, syndicate]);
 
   const byStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
@@ -498,9 +557,16 @@ export default function Pipeline() {
             <Link
               to="/app/workflows"
               className="flex h-8 items-center gap-1.5 rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
-              title="Automate stage moves and screens"
+              title="When → if → then rules (screens, stage moves)"
             >
               Workflows
+            </Link>
+            <Link
+              to="/app/automations"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
+              title="Thesis screener and other judgment agents"
+            >
+              Agents
             </Link>
             <Button size="sm" onClick={() => window.dispatchEvent(new Event("copyr:add-company"))}>
               <IconPlus width={13} height={13} /> New company
@@ -508,6 +574,31 @@ export default function Pipeline() {
           </div>
         }
       />
+
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {(
+          [
+            ["all", "All"],
+            ["queued", "Queued"],
+            ["presented", "Presented"],
+            ["invested", "Firm invested"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setSyndicate(value)}
+            className={cx(
+              "h-7 rounded-full border px-2.5 text-[11px] font-semibold transition",
+              syndicate === value
+                ? "border-paper-900 bg-paper-900 text-white"
+                : "border-paper-900/[0.12] bg-white text-paper-600 hover:border-paper-900/30",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {(viewsQ.data ?? []).length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -637,15 +728,16 @@ export default function Pipeline() {
                 <Th>Company</Th>
                 <Th>Round</Th>
                 <Th>Ask</Th>
-                <Th className="hidden md:table-cell">Sector</Th>
-                <Th className="hidden lg:table-cell">Tags</Th>
+                <Th>Syndicate</Th>
+                <Th className="hidden md:table-cell">Votes</Th>
+                <Th className="hidden lg:table-cell">Submitted by</Th>
                 <Th>Stage</Th>
                 <Th className="hidden sm:table-cell">Source</Th>
                 <Th>Updated</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-paper-900/[0.05]">
-              {(dealsQ.data?.items ?? []).map((deal) => {
+              {boardDeals.map((deal) => {
                 const stage = pipeline?.stages.find((s) => s.id === deal.stageId);
                 return (
                   <tr
@@ -664,21 +756,32 @@ export default function Pipeline() {
                         </div>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-[13px] font-medium text-paper-600">{deal.roundStage ?? "—"}</td>
-                    <td className="num whitespace-nowrap px-3 py-3 text-sm font-bold text-paper-900">{money(deal.askAmount)}</td>
-                    <td className="hidden px-3 py-3 md:table-cell">
-                      {typeof deal.fields["sector"] === "string"
-                        ? <Badge tone="indigo">{String(deal.fields["sector"])}</Badge>
-                        : <span className="text-paper-400">—</span>}
+                    <td className="max-w-[220px] px-3 py-3 text-[13px] font-medium text-paper-800">
+                      <span className="line-clamp-2">{deal.roundLabel || deal.roundStage || "—"}</span>
                     </td>
-                    <td className="hidden px-3 py-3 lg:table-cell">
-                      {(deal.tags ?? []).length ? (
-                        <span className="flex flex-wrap gap-1">
-                          {deal.tags.map((t) => (
-                            <button key={t} onClick={() => setTagFilter(t)} className="rounded-full bg-paper-200/70 px-1.5 py-0.5 text-[10px] font-medium text-paper-600 transition hover:bg-brand-100 hover:text-brand-700">#{t}</button>
-                          ))}
+                    <td className="num whitespace-nowrap px-3 py-3 text-sm font-bold text-paper-900">{money(deal.askAmount)}</td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <span className="flex items-center gap-1">
+                        {deal.syndicateStatus ? (
+                          <Badge tone={deal.syndicateStatus === "presented" ? "green" : "amber"}>{deal.syndicateStatus}</Badge>
+                        ) : (
+                          <span className="text-paper-400">—</span>
+                        )}
+                        {deal.firmInvested && <Badge tone="indigo">Invested</Badge>}
+                      </span>
+                    </td>
+                    <td className="num hidden px-3 py-3 text-[13px] font-semibold text-paper-700 md:table-cell">
+                      {deal.upvoters?.length ? deal.upvoters.length : "—"}
+                    </td>
+                    <td className="hidden max-w-[200px] px-3 py-3 lg:table-cell">
+                      {deal.submittedBy ? (
+                        <span className="block truncate text-[13px] text-paper-700">
+                          {deal.submittedBy.name}
+                          {deal.submittedBy.firm ? <span className="text-paper-400"> · {deal.submittedBy.firm}</span> : null}
                         </span>
-                      ) : <span className="text-paper-400">—</span>}
+                      ) : (
+                        <span className="text-paper-400">—</span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       {stage && (
