@@ -15,7 +15,6 @@ export type SearchFilter = "all" | "companies" | "deals" | "conversations";
 const FILTERS: Array<{ key: SearchFilter; label: string }> = [
   { key: "all", label: "All" },
   { key: "companies", label: "Companies" },
-  { key: "deals", label: "Deals" },
   { key: "conversations", label: "Conversations" },
 ];
 
@@ -86,8 +85,10 @@ export function CommandPalette({
           });
       return out;
     }
-    if (filter === "all" || filter === "companies")
-      for (const c of data?.companies ?? [])
+    const seen = new Set<string>();
+    if (filter === "all" || filter === "companies" || filter === "deals")
+      for (const c of data?.companies ?? []) {
+        seen.add(c.id);
         out.push({
           key: `c-${c.id}`,
           group: "Companies",
@@ -95,17 +96,19 @@ export function CommandPalette({
           hint: [c.sector, c.status].filter(Boolean).join(" · "),
           run: () => nav(`/app/companies/${c.id}`),
         });
+      }
     if (filter === "all" || filter === "deals")
-      for (const d of data?.deals ?? [])
+      for (const d of data?.deals ?? []) {
+        if (seen.has(d.companyId)) continue;
+        seen.add(d.companyId);
         out.push({
-          key: `d-${d.id}`,
-          group: "Deals",
+          key: `c-${d.companyId}`,
+          group: "Companies",
           label: d.companyName,
-          hint: [d.title !== d.companyName ? d.title : null, d.stageName]
-            .filter(Boolean)
-            .join(" · "),
-          run: () => nav(`/app/pipeline?deal=${d.id}`),
+          hint: d.stageName ?? undefined,
+          run: () => nav(`/app/companies/${d.companyId}`),
         });
+      }
     if (filter === "all" || filter === "conversations")
       for (const c of data?.conversations ?? [])
         out.push({

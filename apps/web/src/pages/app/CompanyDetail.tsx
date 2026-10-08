@@ -22,13 +22,13 @@ interface Company {
   tags?: string[];
   status: string;
   source: string;
-  fields: Record<string, string | number | boolean | string[] | null>;
-}
-interface Deal {
-  id: string;
   stageId: string;
   roundStage: string | null;
   askAmount: number | null;
+  valuation: number | null;
+  priority: number;
+  nextStepAt: string | null;
+  fields: Record<string, string | number | boolean | string[] | null>;
 }
 interface Stage { id: string; name: string; kind: string }
 interface Document_ {
@@ -105,11 +105,6 @@ export default function CompanyDetail() {
     queryFn: () => api.get<Company>(`/companies/${id}`),
     enabled: !!id,
   });
-  const dealsQ = useQuery({
-    queryKey: ["deals", "company", id],
-    queryFn: () => api.get<{ items: Deal[] }>(`/deals?limit=10&q=${encodeURIComponent(companyQ.data?.name ?? "")}`),
-    enabled: !!id && !!companyQ.data?.name,
-  });
   const stagesQ = useQuery({ queryKey: ["pipelines"], queryFn: () => api.get<Array<{ id: string; name: string; stages: Stage[] }>>("/pipelines") });
   const docsQ = useQuery({
     queryKey: ["documents", id],
@@ -135,6 +130,15 @@ export default function CompanyDetail() {
     queryKey: ["contacts", id],
     queryFn: () => api.get<Contact[]>(`/companies/${id}/contacts`),
     enabled: !!id,
+  });
+
+  const moveStage = useMutation({
+    mutationFn: (stageId: string) => api.patch(`/deals/${id}`, { stageId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["company", id] });
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      void qc.invalidateQueries({ queryKey: ["activity", id] });
+    },
   });
 
   const addNote = useMutation({
@@ -168,9 +172,8 @@ export default function CompanyDetail() {
     );
   }
   const c = companyQ.data;
-  const deal = dealsQ.data?.items[0];
   const allStages = stagesQ.data?.flatMap((p) => p.stages) ?? [];
-  const stage = deal && allStages.find((s) => s.id === deal.stageId);
+  const stage = allStages.find((s) => s.id === c.stageId);
   const fieldEntries = Object.entries(c.fields ?? {}).filter(([, v]) => v !== null && v !== undefined);
 
   return (
@@ -234,10 +237,45 @@ export default function CompanyDetail() {
           </div>
         </div>
 
-        {deal && (
-          <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
-            {deal.roundStage && <Meta label="Round" value={deal.roundStage} />}
-            {deal.askAmount != null && <Meta label="Ask" value={money(deal.askAmount)} accent />}
+        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
+          <Meta label="Round" value={c.roundStage ?? "—"} />
+          <Meta label="Ask" value={money(c.askAmount)} accent />
+          <Meta label="Valuation" value={money(c.valuation)} />
+          {c.priority >= 4 && <Meta label="Priority" value={c.priority >= 5 ? "High" : "Elevated"} accent={c.priority >= 5} />}
+          {c.nextStepAt && (
+            <Meta
+              label="Next step"
+              value={new Date(c.nextStepAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            />
+          )}
+        </div>
+        {allStages.length > 0 && (
+          <div className="no-scrollbar mt-3.5 flex items-center gap-1 overflow-x-auto rounded-lg bg-paper-100 p-1">
+            {allStages.map((s) => {
+              const active = s.id === c.stageId;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={moveStage.isPending}
+                  onClick={() => moveStage.mutate(s.id)}
+                  className={cx(
+                    "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all",
+                    active
+                      ? "bg-white text-paper-900 shadow-card"
+                      : "text-paper-500 hover:bg-white/60 hover:text-paper-800",
+                  )}
+                >
+                  <span
+                    className={cx(
+                      "h-1.5 w-1.5 rounded-full",
+                      s.kind === "won" ? "bg-emerald-500" : s.kind === "lost" ? "bg-red-500" : "bg-brand-500",
+                    )}
+                  />
+                  {s.name}
+                </button>
+              );
+            })}
           </div>
         )}
       </header>
@@ -424,7 +462,7 @@ export default function CompanyDetail() {
 
           <div className="panel p-5">
             <h3 className="mb-2 text-sm font-semibold text-paper-900">Merge duplicate</h3>
-            <p className="mb-2 text-[11px] text-paper-600">Fold another company record into this one (deals, docs, notes move here).</p>
+            <p className="mb-2 text-[11px] text-paper-600">Fold another record into this one (docs and notes move here).</p>
             <div className="flex gap-2">
               <Select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)} className="flex-1">
                 <option value="">Pick company…</option>

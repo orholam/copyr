@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -24,8 +24,6 @@ import {
   Avatar, Badge, Button, EmptyState, ErrorState, PageHeader, SegmentedControl, Skeleton, cx, money, timeAgo,
 } from "../../components/ui";
 import { IconChevronLeft, IconChevronRight, IconFlame, IconPlus, IconSearch } from "../../components/icons";
-import { DealDrawer } from "../../components/DealDrawer";
-
 interface Deal {
   id: string;
   companyId: string;
@@ -161,15 +159,6 @@ function BoardCard({
         <span aria-hidden className="absolute inset-x-1 -top-[4px] h-[2px] rounded-full bg-brand-500" />
       )}
       <CardBody deal={deal} />
-      <Link
-        to={`/app/companies/${deal.companyId}`}
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="mt-2.5 flex items-center gap-1 text-[11px] font-semibold text-brand-700 opacity-0 transition-opacity hover:text-brand-800 hover:underline group-hover:opacity-100 focus-visible:opacity-100"
-        title="Open company page — the deal card and company are the same record"
-      >
-        Company page →
-      </Link>
     </div>
   );
 }
@@ -218,7 +207,8 @@ function Column({
 export default function Pipeline() {
   const [view, setView] = useState<"board" | "table">("board");
   const [q, setQ] = useState("");
-  const [, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -235,17 +225,15 @@ export default function Pipeline() {
   const trackRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
 
-  const openDeal = (id: string) => {
+  const openRecord = (companyId: string) => {
     if (Date.now() - lastDrag.current < 250) return;
-    setParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.set("deal", id);
-        return p;
-      },
-      { preventScrollReset: true },
-    );
+    navigate(`/app/companies/${companyId}`);
   };
+
+  useEffect(() => {
+    const legacyDeal = params.get("deal");
+    if (legacyDeal) navigate(`/app/companies/${legacyDeal}`, { replace: true });
+  }, [params, navigate]);
 
   const pipelinesQ = useQuery({
     queryKey: ["pipelines"],
@@ -515,7 +503,7 @@ export default function Pipeline() {
               Workflows
             </Link>
             <Button size="sm" onClick={() => window.dispatchEvent(new Event("copyr:add-company"))}>
-              <IconPlus width={13} height={13} /> New deal
+              <IconPlus width={13} height={13} /> New company
             </Button>
           </div>
         }
@@ -619,7 +607,7 @@ export default function Pipeline() {
                         key={deal.id}
                         deal={deal}
                         interactive={!activeDeal}
-                        onOpen={() => openDeal(deal.id)}
+                        onOpen={() => openRecord(deal.companyId)}
                       />
                     ))}
                   </Column>
@@ -662,21 +650,16 @@ export default function Pipeline() {
                 return (
                   <tr
                     key={deal.id}
-                    onClick={() => openDeal(deal.id)}
+                    onClick={() => openRecord(deal.companyId)}
                     className="cursor-pointer transition-colors hover:bg-paper-900/[0.025]"
                   >
                     <td className="max-w-[280px] px-3 py-3">
                       <div className="flex items-center gap-3">
                         <Avatar name={deal.company.name} size={28} />
                         <div className="min-w-0">
-                          <Link
-                            to={`/app/companies/${deal.companyId}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="truncate text-sm font-semibold leading-5 text-paper-900 hover:text-brand-700 hover:underline"
-                            title="Open company page"
-                          >
+                          <p className="truncate text-sm font-semibold leading-5 text-paper-900">
                             {deal.company.name}
-                          </Link>
+                          </p>
                           {deal.company.domain && <p className="truncate text-xs font-medium leading-4 text-paper-400">{deal.company.domain}</p>}
                         </div>
                       </div>
@@ -715,7 +698,6 @@ export default function Pipeline() {
         </div>
       )}
 
-      <DealDrawer />
     </div>
   );
 }

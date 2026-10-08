@@ -229,7 +229,7 @@ export default function Dashboard() {
             {(dealsQ.data?.items ?? []).map((deal) => (
               <li key={deal.id}>
                 <Link
-                  to={`/app/pipeline?deal=${deal.id}`}
+                  to={`/app/companies/${deal.companyId}`}
                   className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-paper-100"
                 >
                   <Avatar name={deal.company.name} size={26} />
