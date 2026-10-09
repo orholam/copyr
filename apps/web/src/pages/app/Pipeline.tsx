@@ -261,6 +261,7 @@ export default function Pipeline() {
     Record<string, { stageId: string; beforeDealId?: string | null }>
   >({});
   const lastDrag = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const openRecord = (companyId: string) => {
     if (Date.now() - lastDrag.current < 250) return;
@@ -271,6 +272,12 @@ export default function Pipeline() {
     const legacyDeal = params.get("deal");
     if (legacyDeal) navigate(`/app/companies/${legacyDeal}`, { replace: true });
   }, [params, navigate]);
+
+  useEffect(() => {
+    const showNewest = () => listRef.current?.scrollTo({ top: 0, left: 0 });
+    window.addEventListener("copyr:company-created", showNewest);
+    return () => window.removeEventListener("copyr:company-created", showNewest);
+  }, []);
 
   const pipelinesQ = useQuery({
     queryKey: ["pipelines"],
@@ -565,7 +572,7 @@ export default function Pipeline() {
       </div>
 
       {loading ? (
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+        <div ref={listRef} className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
           <div className="flex h-full gap-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="w-[288px] shrink-0 space-y-1.5 rounded-2xl bg-paper-900/[0.04] p-2">
@@ -601,7 +608,7 @@ export default function Pipeline() {
           onDragEnd={onDragEnd}
           onDragCancel={onDragCancel}
         >
-          <div className="relative min-h-0 min-w-0 flex-1 overflow-auto">
+          <div ref={listRef} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
             <div className="flex min-h-full w-max min-w-full items-stretch gap-4 pb-2">
                 {pipeline?.stages.map((stage) => (
                   <Column
@@ -638,7 +645,7 @@ export default function Pipeline() {
           )}
         </DndContext>
       ) : (
-        <div key="table" className="animate-fade-in min-h-0 min-w-0 flex-1 overflow-auto">
+        <div ref={listRef} key="table" className="animate-fade-in min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="sticky top-0 z-10 border-b border-paper-900/[0.1] bg-paper-100/95 text-[11px] font-bold uppercase tracking-[0.08em] text-paper-500 backdrop-blur">

@@ -117,7 +117,7 @@ export async function listDeals(
       case "company_name":
         return dir(companies.name);
       default:
-        return [asc(stages.position), asc(companies.position)];
+        return [asc(stages.position), sql`${companies.position} collate "C" asc`];
     }
   })();
 
@@ -384,17 +384,17 @@ export async function moveDeal(
         .where(
           and(
             eq(companies.stageId, targetStageId),
-            sql`${companies.position} < ${before.position}`,
+            sql`(${companies.position} collate "C") < (${before.position} collate "C")`,
             sql`${companies.id} <> ${dealId}`,
           ),
         )
-        .orderBy(desc(companies.position))
+        .orderBy(sql`${companies.position} collate "C" desc`)
         .limit(1);
       afterPos = prev?.position ?? null;
       beforePos = before.position;
     } else {
       const [{ maxPos }] = await tx
-        .select({ maxPos: sql<string | null>`max(${companies.position})` })
+        .select({ maxPos: sql<string | null>`max(${companies.position} collate "C")` })
         .from(companies)
         .where(and(eq(companies.stageId, targetStageId), isNull(companies.archivedAt)));
       afterPos = maxPos;

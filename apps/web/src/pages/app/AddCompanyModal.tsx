@@ -48,6 +48,7 @@ export default function AddCompanyModal({
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["deals"] });
+    window.dispatchEvent(new Event("copyr:company-created"));
     void qc.invalidateQueries({ queryKey: ["companies"] });
     void qc.invalidateQueries({ queryKey: ["documents"] });
     void qc.invalidateQueries({ queryKey: ["analytics"] });

@@ -52,7 +52,7 @@ export async function nextStagePosition(
   stageId: string,
 ): Promise<string> {
   const [{ minPos }] = await exec
-    .select({ minPos: sql<string | null>`min(${companies.position})` })
+    .select({ minPos: sql<string | null>`min(${companies.position} collate "C")` })
     .from(companies)
     .where(and(eq(companies.stageId, stageId), isNull(companies.archivedAt)));
   return generateKeyBetween(null, minPos);
