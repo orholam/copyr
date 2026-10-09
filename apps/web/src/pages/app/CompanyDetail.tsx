@@ -530,10 +530,25 @@ export default function CompanyDetail() {
                 onChange={(e) => setNoteBody(e.target.value)}
                 placeholder="Add an internal note…"
                 className={cx(inputCls, "h-9 py-0")}
-                onKeyDown={(e) => e.key === "Enter" && noteBody.trim() && addNote.mutate()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && noteBody.trim()) addNote.mutate();
+                }}
               />
-              <Button size="sm" variant="subtle" disabled={!noteBody.trim() || addNote.isPending}>Add</Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="subtle"
+                disabled={!noteBody.trim() || addNote.isPending}
+                onClick={() => addNote.mutate()}
+              >
+                {addNote.isPending ? "Adding…" : "Add"}
+              </Button>
             </div>
+            {addNote.isError && (
+              <p className="mt-2 text-[12px] text-red-700">
+                {addNote.error instanceof Error ? addNote.error.message : "Could not add the note."}
+              </p>
+            )}
             <ul className="mt-4 space-y-2">
               {shownNotes.map((n) => (
                 <li key={n.id} className={cx("rounded-lg px-3 py-2.5", n.pinned ? "border border-amber-500/25 bg-amber-500/[0.07]" : "bg-paper-100")}>
