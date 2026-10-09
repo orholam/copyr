@@ -51,11 +51,11 @@ export async function nextStagePosition(
   exec: CoreContext["db"] | Exec,
   stageId: string,
 ): Promise<string> {
-  const [{ maxPos }] = await exec
-    .select({ maxPos: sql<string | null>`max(${companies.position})` })
+  const [{ minPos }] = await exec
+    .select({ minPos: sql<string | null>`min(${companies.position})` })
     .from(companies)
     .where(and(eq(companies.stageId, stageId), isNull(companies.archivedAt)));
-  return generateKeyBetween(maxPos, null);
+  return generateKeyBetween(null, minPos);
 }
 
 export async function getCompanyRow(
