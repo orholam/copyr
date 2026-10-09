@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useOutlet, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cx, Avatar } from "../../components/ui";
@@ -75,8 +75,6 @@ export default function AppShell() {
   const isPipelineRoute = location.pathname === "/app/pipeline";
   const isFullBleed = isAssistantRoute || isWorkflowsRoute || isPipelineRoute;
   const [showAdd, setShowAdd] = useState(false);
-  const [newOrg, setNewOrg] = useState("");
-  const [showNewOrg, setShowNewOrg] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [paletteFilter, setPaletteFilter] = useState<SearchFilter>("all");
   const { dark, toggle } = useTheme();
@@ -99,8 +97,6 @@ export default function AppShell() {
     mutationFn: (name: string) => api.post<{ slug: string }>("/organizations", { name }),
     onSuccess: async (created) => {
       rememberWorkspaceSlug(created.slug);
-      setNewOrg("");
-      setShowNewOrg(false);
       await qc.invalidateQueries();
     },
   });
@@ -201,69 +197,16 @@ export default function AppShell() {
   return (
     <div className="flex h-dvh overflow-hidden bg-paper-100 text-paper-900">
       <aside className="z-10 flex h-full w-[220px] shrink-0 flex-col border-r border-paper-900/[0.08] bg-white">
-        <div className="flex items-center gap-2.5 px-3 py-3.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-paper-900 font-serif text-base font-semibold leading-none text-paper-50">
-            V
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-semibold leading-4 tracking-tight text-paper-900">
-              {ws?.name ?? "Workspace"}
-            </div>
-            <div className="truncate text-[10px] font-medium uppercase tracking-wider leading-[13px] text-paper-400">
-              {ws?.plan ?? "workspace"} plan
-            </div>
-          </div>
-        </div>
-        <div className="px-3 pb-1">
-          {showNewOrg ? (
-            <form
-              className="flex gap-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (newOrg.trim()) createOrg.mutate(newOrg.trim());
-              }}
-            >
-              <input
-                autoFocus
-                value={newOrg}
-                onChange={(e) => setNewOrg(e.target.value)}
-                placeholder="Organization name"
-                aria-label="Organization name"
-                className="h-7 min-w-0 flex-1 rounded-md border border-paper-900/[0.13] bg-white px-2 text-[12px]"
-              />
-              <button type="submit" className="text-[11px] font-medium text-paper-800" disabled={createOrg.isPending}>
-                Add
-              </button>
-              <button type="button" className="text-[11px] text-paper-500" onClick={() => setShowNewOrg(false)}>
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <div className="flex items-center gap-1">
-              {organizations.length > 1 && (
-                <select
-                  aria-label="Organization"
-                  className="h-7 min-w-0 flex-1 rounded-md border border-paper-900/[0.13] bg-white px-1.5 text-[12px] text-paper-800"
-                  value={ws?.slug ?? ""}
-                  onChange={(e) => switchOrg(e.target.value)}
-                >
-                  {organizations.map((org) => (
-                    <option key={org.id} value={org.slug}>
-                      {org.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <button
-                type="button"
-                className="h-7 shrink-0 rounded-md px-1.5 text-[11px] font-medium text-paper-600 hover:bg-paper-900/[0.04] hover:text-paper-900"
-                onClick={() => setShowNewOrg(true)}
-              >
-                New org
-              </button>
-            </div>
-          )}
-        </div>
+        <OrgSwitcher
+          workspaceName={ws?.name ?? "Workspace"}
+          plan={ws?.plan ?? "workspace"}
+          currentSlug={ws?.slug ?? ""}
+          organizations={organizations}
+          creating={createOrg.isPending}
+          error={createOrg.isError ? (createOrg.error as Error).message : null}
+          onSwitch={switchOrg}
+          onCreate={(name) => createOrg.mutateAsync(name)}
+        />
 
         <button
           onClick={() => setShowAdd(true)}
@@ -416,6 +359,206 @@ export default function AppShell() {
 
       <CommandPalette open={showPalette} onClose={() => setShowPalette(false)} initialFilter={paletteFilter} />
       {showAdd && <AddCompanyModal onClose={() => setShowAdd(false)} onCreated={() => setShowAdd(false)} />}
+    </div>
+  );
+}
+
+function orgMark(name: string): string {
+  const letter = name.trim().charAt(0).toUpperCase();
+  return letter || "•";
+}
+
+function OrgSwitcher({
+  workspaceName,
+  plan,
+  currentSlug,
+  organizations,
+  creating,
+  error,
+  onSwitch,
+  onCreate,
+}: {
+  workspaceName: string;
+  plan: string;
+  currentSlug: string;
+  organizations: OrgOption[];
+  creating: boolean;
+  error: string | null;
+  onSwitch: (slug: string) => void;
+  onCreate: (name: string) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setNaming(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setNaming(false);
+      }
+    };
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const orgs =
+    organizations.length > 0
+      ? organizations
+      : [{ id: "current", name: workspaceName, slug: currentSlug, role: "" }];
+
+  return (
+    <div ref={rootRef} className="relative px-2 pt-2">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-paper-900/[0.04]"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-paper-900 text-[13px] font-semibold leading-none text-paper-50">
+          {orgMark(workspaceName)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold leading-4 tracking-tight text-paper-900">
+            {workspaceName}
+          </span>
+          <span className="block truncate text-[10px] font-medium uppercase tracking-wider leading-[13px] text-paper-400">
+            {plan} plan
+          </span>
+        </span>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cx("shrink-0 text-paper-400 transition", open && "rotate-180")}
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-2 right-2 top-[calc(100%+2px)] z-30 overflow-hidden rounded-lg border border-paper-900/[0.1] bg-paper-50 p-1 shadow-pop"
+        >
+          <ul className="max-h-56 overflow-y-auto">
+            {orgs.map((org) => {
+              const current = org.slug === currentSlug;
+              return (
+                <li key={org.id}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSwitch(org.slug);
+                      setOpen(false);
+                    }}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left",
+                      current ? "bg-paper-900/[0.05]" : "hover:bg-paper-900/[0.04]",
+                    )}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-paper-200 text-[11px] font-semibold text-paper-800">
+                      {orgMark(org.name)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-medium leading-4 text-paper-900">{org.name}</span>
+                      {org.role && (
+                        <span className="block truncate text-[10px] capitalize leading-3 text-paper-500">{org.role}</span>
+                      )}
+                    </span>
+                    {current && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-paper-700" aria-hidden>
+                        <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="my-1 h-px bg-paper-900/[0.08]" />
+
+          {naming ? (
+            <form
+              className="px-1 pb-1 pt-0.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = name.trim();
+                if (!trimmed || creating) return;
+                void onCreate(trimmed)
+                  .then(() => {
+                    setName("");
+                    setNaming(false);
+                    setOpen(false);
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Organization name"
+                aria-label="Organization name"
+                className="h-8 w-full rounded-md border border-paper-900/[0.14] bg-white px-2 text-[13px] text-paper-900 outline-none placeholder:text-paper-400 focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+              />
+              {error && <p className="mt-1 text-[11px] leading-4 text-red-600">{error}</p>}
+              <div className="mt-1.5 flex justify-end gap-1">
+                <button
+                  type="button"
+                  className="h-7 rounded-md px-2 text-[12px] font-medium text-paper-600 hover:bg-paper-900/[0.04] hover:text-paper-900"
+                  onClick={() => {
+                    setNaming(false);
+                    setName("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating || !name.trim()}
+                  className="btn-ink h-7 rounded-md px-2.5 text-[12px] font-medium text-paper-50 disabled:opacity-50"
+                >
+                  {creating ? "Creating…" : "Create"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[12.5px] font-medium text-paper-700 hover:bg-paper-900/[0.04]"
+              onClick={() => setNaming(true)}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-paper-900/25 text-paper-500">
+                <IconPlus width={12} height={12} />
+              </span>
+              New organization
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
