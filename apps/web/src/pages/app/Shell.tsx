@@ -117,19 +117,61 @@ export default function AppShell() {
     if (ws?.slug) rememberWorkspaceSlug(ws.slug);
   }, [ws?.slug]);
 
-  // Warm the board cache so Pipeline doesn't cold-start every visit.
+  // Warm the pipeline, then each company, so opening a deal does not wait on the network.
   useEffect(() => {
     if (!ws?.id) return;
-    void qc.prefetchQuery({
-      queryKey: ["pipelines"],
-      queryFn: () => api.get("/pipelines"),
-      staleTime: 5 * 60_000,
-    });
-    void qc.prefetchQuery({
-      queryKey: ["deals", "", null],
-      queryFn: () => api.get("/deals?limit=500&archived=false"),
-      staleTime: 60_000,
-    });
+    let cancelled = false;
+    void (async () => {
+      await qc.prefetchQuery({
+        queryKey: ["pipelines"],
+        queryFn: () => api.get("/pipelines"),
+        staleTime: 5 * 60_000,
+      });
+      const deals = await qc.fetchQuery({
+        queryKey: ["deals", "", null],
+        queryFn: () => api.get<{ items: Array<{ id: string; companyId?: string }> }>("/deals?limit=500&archived=false"),
+        staleTime: 60_000,
+      });
+      const ids = [...new Set((deals.items ?? []).map((d) => d.companyId || d.id))];
+      let cursor = 0;
+      const warm = async () => {
+        while (!cancelled && cursor < ids.length) {
+          const id = ids[cursor++];
+          if (!id) return;
+          await Promise.all([
+            qc.prefetchQuery({
+              queryKey: ["company", id],
+              queryFn: () => api.get(`/companies/${id}`),
+              staleTime: 60_000,
+            }),
+            qc.prefetchQuery({
+              queryKey: ["notes", id],
+              queryFn: () => api.get(`/notes?companyId=${id}`),
+              staleTime: 60_000,
+            }),
+            qc.prefetchQuery({
+              queryKey: ["activity", id],
+              queryFn: () => api.get(`/activity?companyId=${id}&limit=30`),
+              staleTime: 60_000,
+            }),
+            qc.prefetchQuery({
+              queryKey: ["documents", id],
+              queryFn: () => api.get(`/documents?companyId=${id}`),
+              staleTime: 60_000,
+            }),
+            qc.prefetchQuery({
+              queryKey: ["contacts", id],
+              queryFn: () => api.get(`/companies/${id}/contacts`),
+              staleTime: 60_000,
+            }),
+          ]);
+        }
+      };
+      await Promise.all(Array.from({ length: 4 }, () => warm()));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [ws?.id, qc]);
 
   useEffect(() => {

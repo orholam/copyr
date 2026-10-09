@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { usePresence } from "../../lib/presence";
 import {
-  Avatar, Badge, Button, Field, Modal, PageHeader, Panel, Select, Skeleton, Spinner, cx, inputCls, money, timeAgo,
+  Avatar, Badge, Button, Field, Modal, Panel, Select, Skeleton, Spinner, cx, inputCls, money, timeAgo,
 } from "../../components/ui";
 import {
   IconArrowUpRight, IconBot, IconDoc, IconMapPin, IconSpark, IconUser,
@@ -79,6 +79,7 @@ interface TaskItem { id: string; title: string; status: string; spaceId: string 
 
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [noteBody, setNoteBody] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
@@ -110,10 +111,27 @@ export default function CompanyDetail() {
     enabled: !!id,
   });
 
-  const [thesis, setThesis] = useState<{ memo: string } | null>(null);
+  const [thesisOpen, setThesisOpen] = useState(false);
+  const [readingMemo, setReadingMemo] = useState<string | null>(null);
+  const [readingMemoId, setReadingMemoId] = useState<string | null>(null);
+  const [memoEditing, setMemoEditing] = useState(false);
+  const [memoDraft, setMemoDraft] = useState("");
   const genThesis = useMutation({
-    mutationFn: () => api.post<{ memo: string }>(`/companies/${id}/thesis`),
-    onSuccess: setThesis,
+    mutationFn: () => api.post<{ memo: string; activityId: string }>(`/companies/${id}/thesis`),
+    onSuccess: (data) => {
+      setReadingMemo(data.memo);
+      setReadingMemoId(data.activityId);
+      void qc.invalidateQueries({ queryKey: ["activity", id] });
+    },
+  });
+  const saveMemo = useMutation({
+    mutationFn: (input: { activityId: string; memo: string }) =>
+      api.patch<{ memo: string }>(`/activity/${input.activityId}`, { memo: input.memo }),
+    onSuccess: (data) => {
+      setReadingMemo(data.memo);
+      setMemoEditing(false);
+      void qc.invalidateQueries({ queryKey: ["activity", id] });
+    },
   });
 
   const [newTag, setNewTag] = useState("");
@@ -170,6 +188,14 @@ export default function CompanyDetail() {
     },
   });
 
+  const removeCompany = useMutation({
+    mutationFn: () => api.delete(`/companies/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      navigate("/app/pipeline");
+    },
+  });
+
   const moveStage = useMutation({
     mutationFn: (stageId: string) => api.patch(`/deals/${id}`, { stageId }),
     onSuccess: () => {
@@ -217,35 +243,59 @@ export default function CompanyDetail() {
   const enrichBlocked = enrichOutcome(activityQ.data?.items ?? []) === "failed";
   const userTags = stripScreenTags(c.tags ?? []);
   const shownNotes = visibleNotes(notesQ.data ?? [], activityQ.data?.items ?? []);
+  const savedThesis = (activityQ.data?.items ?? []).find(
+    (a) => a.type === "thesis.generated" && typeof a.data?.memo === "string" && a.data.memo.trim(),
+  );
+  const latestMemo =
+    genThesis.data?.memo ?? (typeof savedThesis?.data?.memo === "string" ? savedThesis.data.memo : null);
+  const latestMemoId = genThesis.data?.activityId ?? savedThesis?.id ?? null;
 
   return (
     <div className="animate-fade-up mx-auto max-w-5xl pb-10">
-      <PageHeader
-        title=""
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => genThesis.mutate()}
-              disabled={genThesis.isPending}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-paper-900/[0.14] bg-paper-100 px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-200/70"
-            >
-              {genThesis.isPending ? "Drafting…" : "✨ Thesis"}
-            </button>
-            <button
-              onClick={() => setShareOpen(true)}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700"
-            >
-              🔗 Share{companyLinks.length > 0 && ` (${companyLinks.length})`}
-            </button>
-            <Link
-              to="/app/pipeline"
-              className="flex h-8 items-center gap-1 rounded-lg border border-paper-900/[0.14] bg-paper-100 px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-200/70"
-            >
-              ← Pipeline
-            </Link>
-          </div>
-        }
-      />
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => navigate("/app/pipeline")}
+          className="inline-flex h-10 items-center gap-2 rounded-xl px-1 text-[15px] font-semibold text-paper-800 transition hover:text-paper-950"
+        >
+          <span aria-hidden className="text-lg leading-none">←</span>
+          Back
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setReadingMemo(null);
+              setReadingMemoId(null);
+              setMemoEditing(false);
+              genThesis.reset();
+              setThesisOpen(true);
+              genThesis.mutate();
+            }}
+            disabled={genThesis.isPending}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-paper-900/[0.14] bg-paper-100 px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-200/70"
+          >
+            {genThesis.isPending ? "Drafting…" : "Thesis"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700"
+          >
+            Share{companyLinks.length > 0 && ` (${companyLinks.length})`}
+          </button>
+          <button
+            type="button"
+            disabled={removeCompany.isPending}
+            onClick={() => {
+              if (window.confirm(`Delete ${c.name}? This removes the company and its deal.`)) removeCompany.mutate();
+            }}
+            className="flex h-8 items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+          >
+            {removeCompany.isPending ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
 
       <header className="panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -273,7 +323,9 @@ export default function CompanyDetail() {
               <ScreenBadge recommendation={screen.recommendation} fitScore={screen.fitScore} />
             )}
             {c.syndicateStatus && (
-              <Badge tone={c.syndicateStatus === "presented" ? "green" : "amber"}>{c.syndicateStatus}</Badge>
+              <Badge tone={c.syndicateStatus === "presented" ? "green" : "amber"}>
+                {c.syndicateStatus === "presented" ? "Presented" : "In queue"}
+              </Badge>
             )}
             {c.firmInvested && <Badge tone="indigo">Firm invested</Badge>}
             {stage && (
@@ -344,8 +396,30 @@ export default function CompanyDetail() {
         company={c}
         saving={saveSyndicate.isPending}
         error={saveSyndicate.error instanceof Error ? saveSyndicate.error.message : null}
-        onPatch={(patch) => saveSyndicate.mutate(patch)}
+        onPatch={(patch) => saveSyndicate.mutateAsync(patch)}
       />
+
+      {latestMemo && (
+        <button
+          type="button"
+          onClick={() => {
+            setReadingMemo(latestMemo);
+            setReadingMemoId(latestMemoId);
+            setMemoEditing(false);
+            setThesisOpen(true);
+          }}
+          className="group mt-4 w-full overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white text-left transition hover:border-paper-900/20 hover:shadow-[0_10px_28px_-16px_rgba(23,22,19,0.35)]"
+        >
+          <div className="px-5 pt-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Investment memo</p>
+            <p className="mt-1 font-serif text-[18px] font-semibold tracking-tight text-paper-900">Latest thesis</p>
+          </div>
+          <div className="relative mt-3 max-h-52 overflow-hidden px-5 pb-2">
+            <MemoView text={latestMemo} />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white via-white/90 to-transparent" />
+          </div>
+        </button>
+      )}
 
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_300px]">
         <div className="space-y-5">
@@ -482,6 +556,22 @@ export default function CompanyDetail() {
                         <span className="text-[11px] text-paper-500">{timeAgo(a.createdAt)}</span>
                       </div>
                       <p className="mt-0.5 text-paper-900">{a.summary}</p>
+                      {a.type === "thesis.generated" && typeof a.data?.memo === "string" && a.data.memo.trim() ? (
+                        <button
+                          type="button"
+                          className="mt-1 text-[12px] font-semibold text-brand-700 hover:underline"
+                          onClick={() => {
+                            setReadingMemo(a.data!.memo as string);
+                            setReadingMemoId(a.id);
+                            setMemoEditing(false);
+                            setThesisOpen(true);
+                          }}
+                        >
+                          Read memo
+                        </button>
+                      ) : a.type === "thesis.generated" ? (
+                        <p className="mt-1 text-[12px] text-paper-500">This memo was not saved. Generate it again to keep it on the company.</p>
+                      ) : null}
                       <ActivityDetail data={a.data} type={a.type} />
                     </div>
                   </div>
@@ -561,10 +651,72 @@ export default function CompanyDetail() {
         </aside>
       </div>
 
-      <Modal open={!!thesis} onClose={() => setThesis(null)} title={`Investment memo — ${c.name}`} wide>
-        <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-paper-100 p-4 font-sans text-[13px] leading-relaxed text-paper-800">
-          {thesis?.memo}
-        </pre>
+      <Modal
+        open={thesisOpen}
+        onClose={() => {
+          setThesisOpen(false);
+          setReadingMemo(null);
+          setReadingMemoId(null);
+          setMemoEditing(false);
+        }}
+        title={`Investment memo — ${c.name}`}
+        wide
+      >
+        {genThesis.isPending && !readingMemo && <p className="text-[13px] text-paper-600">Drafting the memo…</p>}
+        {genThesis.isError && !readingMemo && (
+          <p className="text-[13px] text-red-700">
+            {genThesis.error instanceof Error ? genThesis.error.message : "The memo could not be drafted."}
+          </p>
+        )}
+        {(readingMemo ?? genThesis.data?.memo) && !memoEditing && (
+          <div>
+            <div className="mb-3 flex justify-end">
+              <button
+                type="button"
+                className="text-[13px] font-semibold text-brand-700 hover:underline"
+                onClick={() => {
+                  setMemoDraft((readingMemo ?? genThesis.data?.memo)!);
+                  setMemoEditing(true);
+                }}
+              >
+                Edit
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto pr-1">
+              <MemoView text={(readingMemo ?? genThesis.data?.memo)!} />
+            </div>
+          </div>
+        )}
+        {memoEditing && (
+          <div>
+            <textarea
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              aria-label="Edit investment memo"
+              className={cx(inputCls, "min-h-[50vh] resize-y font-mono text-[13px] leading-relaxed")}
+            />
+            {saveMemo.isError && (
+              <p className="mt-2 text-[12px] text-red-700">
+                {saveMemo.error instanceof Error ? saveMemo.error.message : "Could not save the memo."}
+              </p>
+            )}
+            <div className="mt-3 flex justify-end gap-2">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setMemoEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!memoDraft.trim() || !readingMemoId || saveMemo.isPending}
+                onClick={() => {
+                  if (readingMemoId) saveMemo.mutate({ activityId: readingMemoId, memo: memoDraft });
+                }}
+              >
+                {saveMemo.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title={`Share "${c.name}"`} wide>
@@ -625,7 +777,7 @@ function SyndicatePanel({
   company: Company;
   saving: boolean;
   error: string | null;
-  onPatch: (patch: Record<string, unknown>) => void;
+  onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [roundLabel, setRoundLabel] = useState(company.roundLabel ?? "");
   const [status, setStatus] = useState(company.syndicateStatus ?? "");
@@ -633,6 +785,7 @@ function SyndicatePanel({
   const [submitter, setSubmitter] = useState<PersonDraft>(() => personFrom(company.submittedBy, "submitter"));
   const [votes, setVotes] = useState<PersonDraft[]>(() => (company.upvoters ?? []).map((v) => personFrom(v, v.id)));
   const [localError, setLocalError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     setRoundLabel(company.roundLabel ?? "");
@@ -642,26 +795,36 @@ function SyndicatePanel({
     setVotes((company.upvoters ?? []).map((v) => personFrom(v, v.id)));
   }, [company]);
 
-  const saveRound = () => {
+  const saveRound = async () => {
     setLocalError(null);
-    onPatch({
-      roundLabel: roundLabel.trim() || null,
-      syndicateStatus: status || null,
-      firmInvested: invested === "" ? null : invested === "true",
-    });
+    try {
+      await onPatch({
+        roundLabel: roundLabel.trim() || null,
+        syndicateStatus: status || null,
+        firmInvested: invested === "" ? null : invested === "true",
+      });
+      setEditing(false);
+    } catch {
+      // The panel shows the request error.
+    }
   };
 
-  const saveSubmitter = () => {
+  const saveSubmitter = async () => {
     const parsed = personPayload(submitter);
     if (parsed && "error" in parsed) {
       setLocalError(parsed.error);
       return;
     }
     setLocalError(null);
-    onPatch({ submittedBy: parsed?.value ?? null });
+    try {
+      await onPatch({ submittedBy: parsed?.value ?? null });
+      setEditing(false);
+    } catch {
+      // The panel shows the request error.
+    }
   };
 
-  const saveVotes = () => {
+  const saveVotes = async () => {
     const next = [];
     for (const vote of votes) {
       const parsed = personPayload(vote);
@@ -672,8 +835,90 @@ function SyndicatePanel({
       if (parsed?.value) next.push(parsed.value);
     }
     setLocalError(null);
-    onPatch({ upvoters: next });
+    try {
+      await onPatch({ upvoters: next });
+      setEditing(false);
+    } catch {
+      // The panel shows the request error.
+    }
   };
+
+  if (!editing) {
+    const voteCount = company.upvoters?.length ?? 0;
+    const statusLine =
+      company.syndicateStatus === "presented"
+        ? "Presented to the partnership"
+        : company.syndicateStatus === "queued"
+          ? "In the syndicate queue, not presented yet"
+          : "Not marked for the syndicate";
+    const investedLine =
+      company.firmInvested === true
+        ? "A member firm invested"
+        : company.firmInvested === false
+          ? "No member firm has invested"
+          : null;
+    return (
+      <section className="mt-4 overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white">
+        <div className="flex items-start justify-between gap-4 px-5 py-5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Syndicate</p>
+            <p className="mt-1 font-serif text-[22px] font-semibold leading-tight tracking-tight text-paper-900">
+              {company.roundLabel || "Round not written"}
+            </p>
+            <p className="mt-1.5 text-[13px] text-paper-600">
+              {statusLine}
+              {investedLine ? ` · ${investedLine}` : ""}
+              {voteCount > 0 ? ` · ${voteCount} vote${voteCount === 1 ? "" : "s"}` : ""}
+            </p>
+          </div>
+          <button type="button" onClick={() => setEditing(true)} className="shrink-0 text-[13px] font-semibold text-brand-700 hover:underline">
+            Edit
+          </button>
+        </div>
+        <div className="grid border-t border-paper-900/[0.06] lg:grid-cols-[260px_1fr]">
+          <div className="border-b border-paper-900/[0.06] px-5 py-4 lg:border-b-0 lg:border-r">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Submitted by</p>
+            {company.submittedBy ? (
+              <div className="mt-2.5 flex items-start gap-2.5">
+                <Avatar name={company.submittedBy.name} size={32} />
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-semibold text-paper-900">{company.submittedBy.name}</p>
+                  {company.submittedBy.firm && <p className="truncate text-xs text-paper-500">{company.submittedBy.firm}</p>}
+                  {company.submittedBy.email && (
+                    <a href={`mailto:${company.submittedBy.email}`} className="truncate text-xs text-brand-700 hover:underline">
+                      {company.submittedBy.email}
+                    </a>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-[13px] text-paper-400">No submitter yet</p>
+            )}
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Upvotes</p>
+            {voteCount === 0 ? (
+              <p className="mt-2 text-[13px] text-paper-400">No votes yet</p>
+            ) : (
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {(company.upvoters ?? []).map((v) => (
+                  <li key={v.id} className="flex min-w-[180px] items-center gap-2 rounded-lg bg-paper-100 px-2.5 py-1.5">
+                    <Avatar name={v.name} size={22} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[12.5px] font-medium text-paper-900">{v.name}</p>
+                      <p className="truncate text-[11px] text-paper-500">
+                        {v.firm || v.email || (v.occurredAt ? timeAgo(v.occurredAt) : "")}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="mt-4 overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white">
@@ -711,16 +956,19 @@ function SyndicatePanel({
               ["true", "Yes"],
             ]}
           />
-          <Button size="sm" variant="outline" disabled={saving} onClick={saveRound}>
+          <Button size="sm" variant="outline" disabled={saving} onClick={() => void saveRound()}>
             Save round
           </Button>
+          <button type="button" className="text-[12px] font-semibold text-paper-500 hover:text-paper-800" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
         </div>
       </div>
       <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
         <div className="border-b border-paper-900/[0.06] px-5 py-4 lg:border-b-0 lg:border-r">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Submitted by</p>
           <PersonFields draft={submitter} onChange={setSubmitter} />
-          <Button size="sm" variant="outline" className="mt-2" disabled={saving} onClick={saveSubmitter}>
+          <Button size="sm" variant="outline" className="mt-2" disabled={saving} onClick={() => void saveSubmitter()}>
             Save submitter
           </Button>
         </div>
@@ -765,7 +1013,7 @@ function SyndicatePanel({
               ))}
             </ul>
           )}
-          <Button size="sm" variant="outline" className="mt-3" disabled={saving} onClick={saveVotes}>
+          <Button size="sm" variant="outline" className="mt-3" disabled={saving} onClick={() => void saveVotes()}>
             Save votes
           </Button>
         </div>
@@ -917,6 +1165,107 @@ function presentActivitySummary(a: Activity): string {
   return a.summary;
 }
 
+function MemoView({ text }: { text: string }) {
+  return (
+    <div className="space-y-3 text-[14px] leading-relaxed text-paper-800">
+      {memoBlocks(text).map((block, i) => {
+        if (block.kind === "h1") {
+          return (
+            <h2 key={i} className="font-serif text-[22px] font-semibold tracking-tight text-paper-900">
+              {inlineMemo(block.text)}
+            </h2>
+          );
+        }
+        if (block.kind === "h2") {
+          return (
+            <h3 key={i} className="pt-1 text-[12px] font-bold uppercase tracking-[0.07em] text-paper-500">
+              {inlineMemo(block.text)}
+            </h3>
+          );
+        }
+        if (block.kind === "ul") {
+          return (
+            <ul key={i} className="list-disc space-y-1 pl-5">
+              {block.items.map((item, j) => (
+                <li key={j}>{inlineMemo(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (block.kind === "ol") {
+          return (
+            <ol key={i} className="list-decimal space-y-1 pl-5">
+              {block.items.map((item, j) => (
+                <li key={j}>{inlineMemo(item)}</li>
+              ))}
+            </ol>
+          );
+        }
+        return <p key={i}>{inlineMemo(block.text)}</p>;
+      })}
+    </div>
+  );
+}
+
+function inlineMemo(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|_[^_\n]+_)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("_") && part.endsWith("_")) return <em key={i}>{part.slice(1, -1)}</em>;
+    return <span key={i}>{part}</span>;
+  });
+}
+
+type MemoBlock =
+  | { kind: "h1" | "h2" | "p"; text: string }
+  | { kind: "ul" | "ol"; items: string[] };
+
+function memoBlocks(text: string): MemoBlock[] {
+  const blocks: MemoBlock[] = [];
+  let list: { kind: "ul" | "ol"; items: string[] } | null = null;
+  const flush = () => {
+    if (list) {
+      blocks.push(list);
+      list = null;
+    }
+  };
+  for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      flush();
+      continue;
+    }
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {
+      flush();
+      blocks.push({ kind: heading[1]!.length === 1 ? "h1" : "h2", text: heading[2]! });
+      continue;
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line);
+    if (bullet) {
+      if (!list || list.kind !== "ul") {
+        flush();
+        list = { kind: "ul", items: [] };
+      }
+      list.items.push(bullet[1]!);
+      continue;
+    }
+    const numbered = /^\d+[.)]\s+(.+)$/.exec(line);
+    if (numbered) {
+      if (!list || list.kind !== "ol") {
+        flush();
+        list = { kind: "ol", items: [] };
+      }
+      list.items.push(numbered[1]!);
+      continue;
+    }
+    flush();
+    blocks.push({ kind: "p", text: line });
+  }
+  flush();
+  return blocks;
+}
+
 function ActivityTypeBadge({ type }: { type: string }) {
   const label =
     type === "workflow.run"
@@ -927,8 +1276,10 @@ function ActivityTypeBadge({ type }: { type: string }) {
           ? "failed"
           : type === "note.added"
             ? "note"
-            : type === "company.created"
+                : type === "company.created"
               ? "created"
+              : type === "thesis.generated"
+                ? "memo"
               : type === "deal.stage_changed"
                 ? "stage"
                 : type.replace(/[._]/g, " ");
