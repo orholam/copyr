@@ -2,6 +2,13 @@ import { z } from "zod";
 
 /* ── shared primitives ─────────────────────────────────────────────── */
 
+/** Add https:// when someone types acme.com or docsend.com/view/abc. */
+export function withHttpScheme(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export const idSchema = z.string().uuid();
 export type Id = z.infer<typeof idSchema>;
 

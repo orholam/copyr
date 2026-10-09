@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  withHttpScheme,
   idSchema,
   moneySchema,
   nullableMoney,
@@ -15,6 +16,14 @@ import {
   setFieldValueSchema,
   actorSchema,
 } from "./common.js";
+
+describe("withHttpScheme", () => {
+  it("prefixes a bare host and leaves a scheme alone", () => {
+    expect(withHttpScheme("acme.com")).toBe("https://acme.com");
+    expect(withHttpScheme("  docsend.com/view/abc ")).toBe("https://docsend.com/view/abc");
+    expect(withHttpScheme("http://acme.com")).toBe("http://acme.com");
+  });
+});
 
 describe("paginationSchema", () => {
   it("applies defaults when fields are missing", () => {

@@ -356,7 +356,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
         {
           role: "system",
           content:
-            "You are screening a company against a fund's codified investment thesis. " +
+            "You are screening a company against the firm's investment thesis. " +
+            "The instructions in the user message ARE the thesis — there is no other thesis to look up. " +
+            "Score only against that text. Focus areas are alternatives: matching one is enough, missing the others is not a fail. " +
+            "An excluded theme is a reason to watch or pass. " +
             "Return fitScore 0-100, recommendation advance|watch|pass, concrete reasons and concerns, " +
             "and a two-sentence summary. Ground every claim in the provided material; say \"not stated\" where unknown. " +
             (isThin
@@ -367,9 +370,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
         {
           role: "user",
           content:
-            `Fund thesis agent "${input.agentName}"${input.instructions ? `\nInstructions: ${input.instructions}` : ""}` +
-            `${input.mustHaveKeywords?.length ? `\nMust-have themes: ${input.mustHaveKeywords.join(", ")}` : ""}` +
-            `${input.excludeKeywords?.length ? `\nExcluded themes: ${input.excludeKeywords.join(", ")}` : ""}\n` +
+            `Screener: "${input.agentName}"\n` +
+            `Firm thesis:\n${input.instructions?.trim() || "(no thesis written yet — recommend watch and say the thesis is missing)"}\n` +
+            `${input.mustHaveKeywords?.length ? `\nFocus areas (fit any one): ${input.mustHaveKeywords.join(", ")}` : ""}` +
+            `${input.excludeKeywords?.length ? `\nOut of scope: ${input.excludeKeywords.join(", ")}` : ""}\n` +
             `Company: ${input.companyName}\nSector: ${input.sector ?? "?"} Round: ${input.roundStage ?? "?"} Ask: ${input.askAmount ?? "?"}\n\n` +
             `Material:\n${input.sourceText.slice(0, 12_000)}`,
         },

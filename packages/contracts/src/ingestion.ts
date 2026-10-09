@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  withHttpScheme,
   idSchema,
   emailStatusSchema,
   parseStatusSchema,
@@ -27,7 +28,7 @@ export type DocumentDto = z.infer<typeof documentDto>;
 
 /** POST /documents/from-link — queue a DocSend/Pitch/etc link for conversion. */
 export const createDocumentFromLinkSchema = z.object({
-  url: z.string().url(),
+  url: z.string().min(1).transform(withHttpScheme).pipe(z.string().url()),
   companyId: idSchema.optional(),
   dealId: idSchema.optional(),
   companyName: z.string().optional(),

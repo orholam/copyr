@@ -55,6 +55,24 @@ export async function createAgent(
   return mapAgent(row);
 }
 
+/**
+ * Starter thesis for a new workspace. The screener reads this text directly —
+ * it is the thesis, not a pointer to one stored somewhere else.
+ */
+const STARTER_THESIS = `Replace this with what the fund actually invests in. The screener scores every company against this text.
+
+Advance when:
+- The company matches the sectors, stage, and geography you care about.
+- The team and the technology look strong enough for a first meeting.
+
+Watch when:
+- The idea is close but the materials are thin, or the moat and market are still unclear.
+
+Pass when:
+- The company is outside the sectors, stage, or business model you will not do.
+
+Weight team, market, traction, and how defensible the product is.`;
+
 /** Seed the standard system agents for a workspace (idempotent by name). */
 export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string): Promise<void> {
   const existing = await ctx.db
@@ -68,9 +86,8 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       name: "Thesis Screener",
       kind: "thesis_screen" as const,
       description:
-        "Scores inbound companies against the fund thesis and recommends advance / watch / pass.",
-      instructions:
-        "Evaluate fit against the fund's stated focus. Weight team, market, traction, and defensibility.",
+        "The firm's thesis lives here. Scores each inbound company against that thesis and recommends advance, watch, or pass.",
+      instructions: STARTER_THESIS,
       config: {},
       isSystem: true,
     },

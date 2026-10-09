@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { withHttpScheme } from "@copyr/contracts";
 import { api } from "../../lib/api";
 import { Button, Field, Modal, Select, Spinner, inputCls, cx } from "../../components/ui";
 import { IconLink, IconPen, IconUpload } from "../../components/icons";
@@ -11,7 +12,7 @@ export default function AddCompanyModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [tab, setTab] = useState<"link" | "upload" | "manual">("link");
+  const [tab, setTab] = useState<"link" | "upload" | "manual">("manual");
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -49,9 +50,9 @@ export default function AddCompanyModal({
   const error = (fromLink.error ?? manual.error ?? upload.error) as Error | null;
 
   const TABS = [
-    ["link", "Paste link", IconLink],
-    ["upload", "Upload PDFs", IconUpload],
     ["manual", "Manual", IconPen],
+    ["upload", "Upload PDFs", IconUpload],
+    ["link", "Paste link", IconLink],
   ] as const;
 
   return (
@@ -79,13 +80,13 @@ export default function AddCompanyModal({
             e.preventDefault();
             const fd = new FormData(e.currentTarget as HTMLFormElement);
             void fromLink.mutateAsync({
-              url: String(fd.get("url")),
+              url: withHttpScheme(String(fd.get("url") ?? "")),
               companyName: (fd.get("companyName") as string) || undefined,
             });
           }}
         >
           <Field label="Deck or data room link">
-            <input name="url" required placeholder="https://docsend.com/view/abc123" className={inputCls} />
+            <input name="url" required placeholder="docsend.com/view/abc123" className={inputCls} />
           </Field>
           <Field label="Company name" hint="Optional — we infer it from the link when omitted.">
             <input name="companyName" placeholder="Acme Inc." className={inputCls} />
@@ -164,7 +165,7 @@ export default function AddCompanyModal({
             <input name="companyName" required className={inputCls} placeholder="Acme Inc." />
           </Field>
           <Field label="Website" hint="We enrich the company from its site before screening — helps the Thesis Screener avoid a thin-data pass.">
-            <input name="website" type="url" placeholder="https://acme.com" className={inputCls} />
+            <input name="website" placeholder="acme.com" className={inputCls} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Round">

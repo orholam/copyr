@@ -189,6 +189,11 @@ function AgentsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boo
                 </div>
                 <p className="mt-1 text-[11px] text-paper-500">{KIND_HINT[a.kind]}</p>
                 {a.description && <p className="mt-1 text-xs text-paper-600">{a.description}</p>}
+                {a.kind === "thesis_screen" && (
+                  <p className="mt-2 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-paper-700">
+                    {a.instructions?.trim() || "No thesis written yet. Edit this agent and paste what the firm invests in."}
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -243,8 +248,17 @@ function RunAgentForm({ agentId, onDone }: { agentId: string; onDone: () => void
   );
 }
 
+function splitList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function AgentModal({ initial, onClose }: { initial?: Agent; onClose: () => void }) {
   const qc = useQueryClient();
+  const [kind, setKind] = useState<Agent["kind"]>(initial?.kind || "custom");
+  const isThesis = kind === "thesis_screen";
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       initial && initial.id ? api.patch(`/agents/${initial.id}`, body) : api.post("/agents", body),
@@ -255,55 +269,100 @@ function AgentModal({ initial, onClose }: { initial?: Agent; onClose: () => void
   });
 
   const keywords = initial?.config?.mustHaveKeywords?.join(", ") ?? "";
+  const excluded = initial?.config?.excludeKeywords?.join(", ") ?? "";
 
   return (
-    <Modal open onClose={onClose} title={initial && initial.id ? `Edit ${initial.name}` : "New agent"}>
+    <Modal
+      open
+      onClose={onClose}
+      size={isThesis ? "lg" : "md"}
+      title={isThesis ? "Firm thesis" : initial && initial.id ? `Edit ${initial.name}` : "New agent"}
+      subtitle={
+        isThesis
+          ? "This text is the thesis. Every company is scored against what you write here. There is no other copy in Settings."
+          : undefined
+      }
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           save.mutate({
             name: String(fd.get("name") ?? ""),
-            kind: String(fd.get("kind") ?? "thesis_screen"),
+            kind,
             description: String(fd.get("description") ?? "") || undefined,
             instructions: String(fd.get("instructions") ?? "") || undefined,
             config: {
               ...(initial?.config ?? {}),
-              mustHaveKeywords: String(fd.get("keywords") ?? "")
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
+              mustHaveKeywords: splitList(String(fd.get("keywords") ?? "")),
+              ...(isThesis
+                ? { excludeKeywords: splitList(String(fd.get("excluded") ?? "")) }
+                : {}),
             },
           });
         }}
         className="space-y-3"
       >
         <Field label="Name">
-          <input name="name" required autoFocus defaultValue={initial?.name} className={inputCls} placeholder="Climate Infra Screener" />
+          <input name="name" required autoFocus={!isThesis} defaultValue={initial?.name} className={inputCls} placeholder="Climate Infra Screener" />
         </Field>
         <Field label="Kind">
-          <select name="kind" defaultValue={initial?.kind || "thesis_screen"} disabled={!!initial?.isSystem} className={inputCls}>
+          <select
+            name="kind"
+            value={kind}
+            disabled={!!initial?.isSystem}
+            onChange={(e) => setKind(e.target.value as Agent["kind"])}
+            className={inputCls}
+          >
             <option value="thesis_screen">Thesis screen</option>
             <option value="diligence_checklist">Diligence checklist</option>
             <option value="portfolio_monitor">Portfolio monitor</option>
             <option value="custom">Custom</option>
           </select>
         </Field>
-        <Field label="Description">
-          <input name="description" defaultValue={initial?.description ?? ""} className={inputCls} placeholder="What this agent owns" />
-        </Field>
-        <Field label="Instructions / thesis" hint="The judgment this agent applies every time">
-          <textarea
-            name="instructions"
-            rows={3}
-            defaultValue={initial?.instructions ?? ""}
+        <Field
+          label={isThesis ? "Card label" : "Description"}
+          hint={isThesis ? "One line on the agent card. The thesis itself is the box below." : undefined}
+        >
+          <input
+            name="description"
+            defaultValue={initial?.description ?? ""}
             className={inputCls}
-            placeholder="We back infrastructure-software businesses at Series A/B…"
+            placeholder={isThesis ? "What this screener is for" : "What this agent owns"}
           />
         </Field>
-        <Field label="Must-have keywords" hint="Comma-separated; each hit raises fit">
-          <input name="keywords" defaultValue={keywords} className={inputCls} placeholder="infrastructure, b2b" />
+        <Field
+          label={isThesis ? "Thesis" : "Instructions"}
+          hint={
+            isThesis
+              ? "Write what you invest in, what gets an advance, what to watch, and what to pass. The screener uses this every time."
+              : "The judgment this agent applies every time"
+          }
+        >
+          <textarea
+            name="instructions"
+            rows={isThesis ? 16 : 3}
+            autoFocus={isThesis}
+            defaultValue={initial?.instructions ?? ""}
+            className={`${inputCls} leading-relaxed`}
+            placeholder={
+              isThesis
+                ? "We invest in seed-stage climate and industrial companies in North America. Advance when…"
+                : "We back infrastructure-software businesses at Series A/B…"
+            }
+          />
         </Field>
+        <Field
+          label={isThesis ? "Focus areas" : "Must-have keywords"}
+          hint={isThesis ? "Comma-separated. A company only needs to match one." : "Comma-separated; each hit raises fit"}
+        >
+          <input name="keywords" defaultValue={keywords} className={inputCls} placeholder="robotics, climate, energy" />
+        </Field>
+        {isThesis && (
+          <Field label="Out of scope" hint="Comma-separated. These lean toward watch or pass.">
+            <input name="excluded" defaultValue={excluded} className={inputCls} placeholder="crypto, consumer, marketplace" />
+          </Field>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             Cancel
