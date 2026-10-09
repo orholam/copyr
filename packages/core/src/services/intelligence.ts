@@ -65,7 +65,7 @@ export async function generateThesis(
     summary: `AI generated an investment memo for ${company.name}`,
     actor: "ai",
     actorUserId: session.actor.userId,
-    data: { model: ctx.ai.model },
+    data: { model: ctx.ai.model, memo: memo.memo, confidence: memo.confidence },
   });
 
   return {
