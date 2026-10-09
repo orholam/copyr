@@ -92,7 +92,7 @@ export const ACTION_OPTIONS = [
   "run_agent",
 ] as const;
 
-const OPS = ["eq", "neq", "contains", "gt", "gte", "lt", "lte", "exists"] as const;
+const OPS = ["eq", "neq", "contains", "gt", "gte", "lt", "lte", "exists", "nexists"] as const;
 
 function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
@@ -318,7 +318,7 @@ function SortableCondition({
             </option>
           ))}
         </select>
-        {cond.op !== "exists" && (
+        {cond.op !== "exists" && cond.op !== "nexists" && (
           <input
             className={`${nodeInput} w-24`}
             placeholder="value"

@@ -109,6 +109,61 @@ describe("withContractEnforcement", () => {
     expect(score.summary).toBe("Looks strong");
   });
 
+  it("downgrades advance to watch when concerns flag thin material", async () => {
+    const raw: AiProvider = {
+      name: "stub",
+      model: "stub",
+      async extractDeck() {
+        return { company: {}, deal: {}, fields: {}, confidence: 0.5 };
+      },
+      async triageEmail() {
+        return {
+          intent: "other",
+          companies: [],
+          isPortfolioUpdate: false,
+          updateTitle: null,
+          summary: "x",
+          confidence: 0.5,
+        };
+      },
+      async classifyUpdate() {
+        return { kind: "update", title: "t" };
+      },
+      async generateThesis() {
+        return { memo: "m", confidence: 0.5 };
+      },
+      async scoreThesis() {
+        return {
+          fitScore: 80,
+          recommendation: "advance",
+          reasons: [],
+          concerns: [
+            "Very little material available to evaluate — needs enrichment before a pass/advance call.",
+          ],
+          summary: "Thin",
+          confidence: 0.3,
+        };
+      },
+      async assistantTurn() {
+        return { reply: "ok", toolCalls: [], confidence: 0.5 };
+      },
+      async answerGrounded() {
+        return { answer: "a", citations: [], confidence: 0.5 };
+      },
+      async extractTableRows() {
+        return { rows: [] };
+      },
+    };
+    const wrapped = withContractEnforcement(raw);
+    const score = await wrapped.scoreThesis({
+      agentName: "Thesis Screener",
+      companyName: "Acme",
+      sourceText: "x",
+    });
+    expect(score.recommendation).toBe("watch");
+    expect(score.fitScore).toBeLessThanOrEqual(58);
+  });
+
   it("maps drifted provider output onto the documented contract", async () => {
     const drifted: AiProvider = {
       name: "drift",

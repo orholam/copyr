@@ -106,6 +106,12 @@ export default function Inbox() {
         }
       />
 
+      {(simulate.isError || bulkSimulate.isError) && (
+        <p className="mb-2 text-xs text-red-600">
+          {((simulate.error ?? bulkSimulate.error) as Error)?.message ?? "Simulate failed"}
+        </p>
+      )}
+
       {emailsQ.isError ? (
         <ErrorState error={emailsQ.error} onRetry={() => void emailsQ.refetch()} />
       ) : emailsQ.isLoading ? (

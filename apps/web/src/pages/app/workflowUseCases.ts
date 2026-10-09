@@ -8,9 +8,9 @@ export const WORKFLOW_USE_CASES: Array<{
 }> = [
   {
     name: "Screen new companies",
-    blurb: "Inbound company → Thesis Screener (advance / watch / pass).",
+    blurb: "Company with no website → Thesis Screener. (With a domain, enrich runs first.)",
     triggerEvent: "company.created",
-    conditions: [],
+    conditions: [{ field: "company.domain", op: "nexists" }],
     actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
   },
   {

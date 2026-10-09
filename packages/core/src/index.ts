@@ -78,6 +78,16 @@ export async function createCore(opts?: {
   runWorkers?: boolean;
 }): Promise<Core> {
   const config = loadConfig();
+  if (
+    config.NODE_ENV === "production" &&
+    (config.STORAGE_ACCESS_KEY_ID === "copyr-dev" ||
+      config.STORAGE_SECRET_ACCESS_KEY === "copyr-dev-secret")
+  ) {
+    console.warn(
+      "[warn] STORAGE_ACCESS_KEY_ID/SECRET still at local defaults — " +
+        "deck uploads and document storage will fail until Supabase S3 keys are set on this host.",
+    );
+  }
   const queryUrl = opts?.dbUrl ?? queryDatabaseUrl(config);
   const bossUrl = opts?.dbUrl ?? config.DATABASE_URL;
   const db = createDb(queryUrl);

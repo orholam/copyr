@@ -48,7 +48,17 @@ export async function ingestEmail(
     let storageKey = att.storageKey;
     if (!storageKey && att.contentBase64) {
       storageKey = `workspaces/${workspaceId}/inbound/${crypto.randomUUID()}/${att.filename}`;
-      await ctx.storage.put(storageKey, Buffer.from(att.contentBase64, "base64"), att.mime);
+      try {
+        await ctx.storage.put(storageKey, Buffer.from(att.contentBase64, "base64"), att.mime);
+      } catch (err) {
+        // Bad/missing S3 credentials must not kill ingest — triage still runs from
+        // the email body. Deck parse is skipped until storage is fixed.
+        console.error(
+          `[ingestEmail] storage put failed for ${att.filename}:`,
+          err instanceof Error ? err.message : err,
+        );
+        storageKey = undefined;
+      }
     }
     if (!storageKey) continue;
     attachments.push({
@@ -87,7 +97,18 @@ export async function ingestEmail(
     actor: "system",
   });
 
-  await ctx.enqueue("process-email", { workspaceId, emailId: row.id });
+  const jobId = await ctx.enqueue("process-email", { workspaceId, emailId: row.id });
+  // If pg-boss is unavailable, process inline so simulate/webhook never dead-end.
+  if (!jobId) {
+    try {
+      await processEmailMessage(ctx, workspaceId, row.id);
+    } catch (err) {
+      console.error(
+        "[ingestEmail] inline process-email failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
   return mapEmail(row);
 }
 

@@ -363,9 +363,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
             "Return fitScore 0-100, recommendation advance|watch|pass, concrete reasons and concerns, " +
             "and a two-sentence summary. Ground every claim in the provided material; say \"not stated\" where unknown. " +
             (isThin
-              ? "The material is VERY THIN (<180 chars) — never emit \"pass\" on thin material; use \"watch\" and flag that more information is needed."
+              ? "The material is VERY THIN (<180 chars) — never emit \"pass\" or \"advance\" on thin material; use \"watch\" and flag that more information is needed. Keep confidence <= 0.45."
               : "") +
-            " Do not auto-pass when there is insufficient information — prefer watch.",
+            " Do not auto-pass when there is insufficient information — prefer watch. " +
+            "Set confidence honestly: high only when materials clearly support the call.",
         },
         {
           role: "user",

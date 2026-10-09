@@ -22,7 +22,7 @@ export default function Workflows() {
     queryFn: () => api.get<Overview>("/automations/overview"),
   });
   const [editor, setEditor] = useState<WorkflowRecord | "new" | null>(null);
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(true);
 
   const existingNames = new Set((overviewQ.data?.workflows ?? []).map((w) => w.name));
   const workflows = overviewQ.data?.workflows ?? [];
@@ -58,7 +58,7 @@ export default function Workflows() {
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => setShowTemplates((v) => !v)}>
-          Templates
+          {showTemplates ? "Hide templates" : "Templates"}
         </Button>
         <Button size="sm" onClick={() => setEditor("new")}>
           <IconPlus width={14} height={14} /> New

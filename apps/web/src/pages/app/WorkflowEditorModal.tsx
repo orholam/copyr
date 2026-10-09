@@ -62,7 +62,7 @@ export function draftFromWorkflow(w: WorkflowRecord): WorkflowDraft {
       id: uid("cond"),
       field: c.field,
       op: c.op,
-      value: c.op === "exists" ? "" : String(c.value ?? ""),
+      value: c.op === "exists" || c.op === "nexists" ? "" : String(c.value ?? ""),
     })),
     actions: w.actions.length
       ? w.actions.map(actionToDraft)
@@ -92,7 +92,7 @@ function draftToBody(draft: WorkflowDraft) {
       .map((c) => ({
         field: c.field,
         op: c.op,
-        value: c.op === "exists" ? undefined : c.value,
+        value: c.op === "exists" || c.op === "nexists" ? undefined : c.value,
       })),
     actions: draft.actions.map((a) => ({
       type: a.type,

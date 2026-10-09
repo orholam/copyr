@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUrl } from "../../lib/api";
 import { Badge, Button, Field, PageHeader, SegmentedControl, Select, Spinner, inputCls, cx } from "../../components/ui";
-import AutomationsTab from "./settings-tabs/AutomationsTab";
 import WebhooksTab from "./settings-tabs/WebhooksTab";
 import TeamTab from "./settings-tabs/TeamTab";
 
@@ -83,7 +83,7 @@ export default function Settings() {
             { value: "pipeline", label: "Stages" },
             { value: "team", label: "Team" },
             { value: "fields", label: "Fields", show: can("manage_fields") },
-            { value: "automations", label: "Automations", show: can("manage_automations") },
+            { value: "automations", label: "Automation", show: can("manage_automations") },
             { value: "webhooks", label: "Webhooks", show: can("manage_webhooks") },
             { value: "keys", label: "API keys", show: can("manage_team") || can("manage_billing") },
             { value: "forms", label: "Forms", show: can("manage_pipeline") },
@@ -221,7 +221,31 @@ export default function Settings() {
         </section>
       )}
 
-      {tab === "automations" && <div className="panel animate-fade-in p-5"><AutomationsTab /></div>}
+      {tab === "automations" && (
+        <div className="panel animate-fade-in space-y-4 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-paper-900">Agents & workflows live in the app nav</h3>
+            <p className="mt-1 text-xs text-paper-600">
+              Judgment engines (thesis screen, diligence checklist) and when→if→then rules are no longer edited here —
+              use the dedicated surfaces under Automation.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/app/automations"
+              className="inline-flex h-8 items-center rounded-md bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700"
+            >
+              Open Agents
+            </Link>
+            <Link
+              to="/app/workflows"
+              className="inline-flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
+            >
+              Open Workflows
+            </Link>
+          </div>
+        </div>
+      )}
       {tab === "webhooks" && <div className="panel animate-fade-in p-5"><WebhooksTab /></div>}
 
       {tab === "integrations" && (

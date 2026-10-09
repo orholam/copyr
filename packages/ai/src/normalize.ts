@@ -146,6 +146,14 @@ function normalizeThesisScore(raw: unknown): ThesisScoreOutput {
     rec = "watch";
     fit = Math.max(fit, 45);
   }
+  // Never auto-advance on thin / insufficient material either
+  if (
+    rec === "advance" &&
+    concerns.some((c) => /little material|insufficient|needs enrichment|thin/i.test(c))
+  ) {
+    rec = "watch";
+    fit = Math.min(fit, 58);
+  }
   return {
     fitScore: fit,
     recommendation: (RECS as readonly string[]).includes(rec) ? (rec as ThesisScoreOutput["recommendation"]) : "watch",

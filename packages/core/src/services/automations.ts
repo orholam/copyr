@@ -59,6 +59,10 @@ export async function overview(
   ctx: CoreContext,
   session: Session,
 ): Promise<AutomationsOverview> {
+  // Keep default VC playbooks present and heal older double-screen rules.
+  const { ensureDefaultAgentWorkflows } = await import("./agents.js");
+  await ensureDefaultAgentWorkflows(ctx, session.workspaceId).catch(() => undefined);
+
   const { listAgents } = await import("./agents.js");
   const { listWorkflows } = await import("./automation.js");
   const [agentRows, workflowRows, agentRunRows, workflowRunRows] = await Promise.all([

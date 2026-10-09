@@ -379,15 +379,20 @@ export class MockProvider implements AiProvider {
       if (containsWord(text, kw.toLowerCase())) {
         mustHits++;
         reasons.push(`Matches required theme "${kw}".`);
+      } else {
+        concerns.push(`Missing required theme "${kw}".`);
+        score -= 12;
       }
     }
     if (mustHave.length) score += Math.round((mustHits / mustHave.length) * 40);
-    else score += 10;
+    else score += 8;
 
+    let excludeHits = 0;
     for (const kw of input.excludeKeywords ?? []) {
       if (containsWord(text, kw.toLowerCase())) {
+        excludeHits++;
         concerns.push(`Contains excluded theme "${kw}".`);
-        score -= 30;
+        score -= 35;
       }
     }
 
@@ -403,7 +408,17 @@ export class MockProvider implements AiProvider {
       concerns.push("Churn mentioned — probe retention drivers.");
       score -= 4;
     }
+
+    if (input.sector) {
+      const sector = input.sector.toLowerCase();
+      if (containsWord(text, sector) || text.includes(sector)) {
+        reasons.push(`Sector "${input.sector}" supported by materials.`);
+        score += 5;
+      }
+    }
+
     const trimmedLen = input.sourceText.trim().length;
+    // Thin = little text AND no positive thesis signals yet (exclude-only doesn't count).
     const isThin = trimmedLen < 180 && reasons.length === 0;
     if (isThin) {
       concerns.push("Very little material available to evaluate — needs enrichment before a pass/advance call.");
@@ -418,25 +433,47 @@ export class MockProvider implements AiProvider {
       if (hits.length >= 2) {
         reasons.push(`Aligns with agent instructions (signals: ${hits.slice(0, 4).join(", ")}).`);
         score += 6;
+      } else if (trimmedLen >= 180 && instructionTerms.some((t) => t.length > 3)) {
+        concerns.push("Limited overlap with agent instructions — verify thesis fit manually.");
+        score -= 4;
       }
     }
 
     score = Math.max(1, Math.min(99, score));
-    // Never auto-pass on thin context — default to watch so enrichment / docs can upgrade
-    if (isThin && score < 40) score = 45;
-    if (isThin && reasons.length === 0 && concerns.some((c) => /little material/i.test(c))) {
-      // ensure at least watch when we have no signals to judge
-      score = Math.max(score, 45);
+    // Never auto-pass or auto-advance on thin context
+    if (isThin) {
+      score = Math.min(Math.max(score, 45), 58);
     }
-    const recommendation: ThesisScoreOutput["recommendation"] =
+
+    let recommendation: ThesisScoreOutput["recommendation"] =
       score >= 65 ? "advance" : score >= 40 ? "watch" : "pass";
+
+    // Hard gates: thin material and hard excludes cannot advance; hard excludes lean pass.
+    if (isThin) recommendation = "watch";
+    if (excludeHits > 0 && recommendation === "advance") recommendation = "watch";
+    if (excludeHits > 0 && mustHave.length > 0 && mustHits === 0) recommendation = "pass";
+    if (mustHave.length > 0 && mustHits === 0 && recommendation === "advance") recommendation = "watch";
+
+    const materialSignal = Math.min(0.35, trimmedLen / 2000);
+    const confidence = Number(
+      Math.max(
+        0.25,
+        Math.min(
+          0.92,
+          (isThin ? 0.32 : 0.48) +
+            mustHits * 0.07 +
+            materialSignal +
+            (excludeHits > 0 ? 0.08 : 0) -
+            (isThin ? 0.05 : 0),
+        ),
+      ).toFixed(2),
+    );
 
     const summary =
       `Fit ${score}/100 against "${input.agentName}" — ${recommendation}. ` +
       (reasons.length ? `Strengths: ${reasons.length} signal(s). ` : "") +
       (concerns.length ? `Flags: ${concerns.length}.` : "");
 
-    const confidence = Number(Math.min(0.88, 0.4 + mustHits * 0.08 + (input.sourceText.length > 500 ? 0.15 : 0)).toFixed(2));
     return {
       fitScore: score,
       recommendation,

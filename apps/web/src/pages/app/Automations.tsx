@@ -109,9 +109,14 @@ export default function Automations() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Stat label="Active agents" value={overviewQ.data?.stats.activeAgents ?? 0} />
         <Stat label="Runs (7d)" value={overviewQ.data?.stats.runsLast7d ?? 0} />
+        <Stat
+          label="Agent↔workflow chains (7d)"
+          value={overviewQ.data?.stats.chainRunsLast7d ?? 0}
+          sub="Screens that triggered stage moves"
+        />
       </div>
 
       <SegmentedControl
@@ -222,9 +227,18 @@ function AgentsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boo
       {runTarget && (
         <Modal open onClose={() => setRunTarget(null)} title={`Run ${runTarget.name}`}>
           <p className="mb-3 text-sm text-paper-600">
-            Runs this agent once against a company. For automatic runs on stage changes, add a rule on Workflows.
+            {runTarget.kind === "portfolio_monitor"
+              ? "Scans recent portfolio activity across the workspace."
+              : "Pick a company to run against. Automatic runs are configured on Workflows."}{" "}
+            <Link to="/app/workflows" className="text-brand-700 hover:underline">
+              Open Workflows
+            </Link>
           </p>
-          <RunAgentForm agentId={runTarget.id} onDone={() => setRunTarget(null)} />
+          <RunAgentForm
+            agentId={runTarget.id}
+            kind={runTarget.kind}
+            onDone={() => setRunTarget(null)}
+          />
         </Modal>
       )}
       {editTarget && <AgentModal initial={editTarget.id ? editTarget : undefined} onClose={() => setEditTarget(null)} />}
@@ -232,19 +246,63 @@ function AgentsTab({ overviewQ }: { overviewQ: { data?: Overview; isLoading: boo
   );
 }
 
-function RunAgentForm({ agentId, onDone }: { agentId: string; onDone: () => void }) {
+function RunAgentForm({
+  agentId,
+  kind,
+  onDone,
+}: {
+  agentId: string;
+  kind: Agent["kind"];
+  onDone: () => void;
+}) {
   const qc = useQueryClient();
+  const needsCompany = kind !== "portfolio_monitor";
+  const [companyId, setCompanyId] = useState("");
+  const companiesQ = useQuery({
+    queryKey: ["companies-picker"],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>("/companies?limit=200"),
+    enabled: needsCompany,
+  });
+
   const run = useMutation({
-    mutationFn: () => api.post(`/agents/${agentId}/runs`, {}),
+    mutationFn: () =>
+      api.post(`/agents/${agentId}/runs`, needsCompany ? { companyId } : {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["automations-overview"] });
       onDone();
     },
   });
+
   return (
-    <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
-      {run.isPending ? <Spinner /> : "Run now"}
-    </Button>
+    <div className="space-y-3">
+      {needsCompany && (
+        <Field label="Company">
+          <select
+            className={inputCls}
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            required
+          >
+            <option value="">Select a company…</option>
+            {(companiesQ.data?.items ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {run.isError && (
+        <p className="text-xs text-red-600">{(run.error as Error).message}</p>
+      )}
+      <Button
+        size="sm"
+        onClick={() => run.mutate()}
+        disabled={run.isPending || (needsCompany && !companyId)}
+      >
+        {run.isPending ? <Spinner /> : "Run now"}
+      </Button>
+    </div>
   );
 }
 
