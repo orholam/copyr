@@ -95,9 +95,9 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       name: "Website Enricher",
       kind: "custom" as const,
       description:
-        "Researches the company with Parallel and fills gaps (description, sector, location, founding year, headcount) before screening.",
+        "Researches the company with Parallel and fills the empty facts on the company page: what they do, sector, location, founding year, team size, round, ask, valuation, LinkedIn, and founders.",
       instructions:
-        "Research the company from public sources via Parallel. Write only missing values. Never clobber human input.",
+        "Research the company from public sources via Parallel. Fill only empty company-page fields. Never clobber human input.",
       config: {},
       isSystem: true,
     },

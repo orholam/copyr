@@ -41,7 +41,7 @@ function dispatchActivity(client: QueryClient, data: { entityType: string; type:
   }
   const map: Record<string, string[][]> = {
     deal: [["activity"], ["notes"]],
-    company: [["companies"], ["company"], ["activity"], ["notes"], ["spaces"], ["tasks"]],
+    company: [["companies"], ["company"], ["contacts"], ["activity"], ["notes"], ["spaces"], ["tasks"]],
     email: [["emails"]],
     document: [["documents"]],
     note: [["notes"], ["activity"]],

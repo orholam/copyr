@@ -10,6 +10,11 @@ describe("parseParallelProfile", () => {
         location: "Austin, TX",
         founded_year: 2019,
         employee_count: 42,
+        latest_round: "Series A",
+        ask_usd: 12_000_000,
+        valuation_usd: 48_000_000,
+        linkedin_url: "linkedin.com/company/grid",
+        founders: [{ name: "Ada Lovelace", title: "CEO" }, { name: "Ada Lovelace", title: "duplicate" }],
       }),
     ).toEqual({
       description: "Builds grid batteries.",
@@ -17,6 +22,11 @@ describe("parseParallelProfile", () => {
       location: "Austin, TX",
       foundedYear: 2019,
       employeeCount: 42,
+      latestRound: "Series A",
+      askUsd: 12_000_000,
+      valuationUsd: 48_000_000,
+      linkedinUrl: "https://linkedin.com/company/grid",
+      founders: [{ name: "Ada Lovelace", title: "CEO" }],
     });
   });
 

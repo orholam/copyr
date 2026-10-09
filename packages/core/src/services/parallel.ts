@@ -5,12 +5,23 @@
 
 const PARALLEL_API = "https://api.parallel.ai/v1/tasks/runs";
 
+export interface ParallelFounder {
+  name: string;
+  title: string;
+}
+
+/** Facts the company page actually shows. */
 export interface ParallelCompanyProfile {
   description: string;
   sector: string;
   location: string;
   foundedYear: number | null;
   employeeCount: number | null;
+  latestRound: string;
+  askUsd: number | null;
+  valuationUsd: number | null;
+  linkedinUrl: string;
+  founders: ParallelFounder[];
 }
 
 const OUTPUT_SCHEMA = {
@@ -18,7 +29,18 @@ const OUTPUT_SCHEMA = {
   json_schema: {
     type: "object",
     additionalProperties: false,
-    required: ["description", "sector", "location", "founded_year", "employee_count"],
+    required: [
+      "description",
+      "sector",
+      "location",
+      "founded_year",
+      "employee_count",
+      "latest_round",
+      "ask_usd",
+      "valuation_usd",
+      "linkedin_url",
+      "founders",
+    ],
     properties: {
       description: {
         type: "string",
@@ -39,6 +61,37 @@ const OUTPUT_SCHEMA = {
       employee_count: {
         type: ["integer", "null"],
         description: "Approximate current employee count as an integer, or null if unknown.",
+      },
+      latest_round: {
+        type: "string",
+        description:
+          "Latest known round in plain language, such as Seed or $2.3B Series D. Empty string if unknown. Do not guess.",
+      },
+      ask_usd: {
+        type: ["integer", "null"],
+        description:
+          "Amount they are raising now, in USD, only when a current fundraise is stated. Null if unknown. Do not reuse a past round size.",
+      },
+      valuation_usd: {
+        type: ["integer", "null"],
+        description: "Last known valuation in USD, or null if unknown.",
+      },
+      linkedin_url: {
+        type: "string",
+        description: "Company LinkedIn URL, or empty string if unknown.",
+      },
+      founders: {
+        type: "array",
+        description: "Founders or co-founders named in public sources. Empty array if unknown.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "title"],
+          properties: {
+            name: { type: "string", description: "Full name" },
+            title: { type: "string", description: "Role, such as CEO, or empty string." },
+          },
+        },
       },
     },
   },
@@ -73,11 +126,57 @@ export function parseParallelProfile(content: unknown): ParallelCompanyProfile |
     location: text(row.location).slice(0, 120),
     foundedYear: year,
     employeeCount: employees,
+    latestRound: text(row.latest_round).slice(0, 160),
+    askUsd: intInRange(row.ask_usd, 1, 1_000_000_000_000),
+    valuationUsd: intInRange(row.valuation_usd, 1, 10_000_000_000_000),
+    linkedinUrl: cleanHttpUrl(row.linkedin_url),
+    founders: parseFounders(row.founders),
   };
-  if (!profile.description && !profile.sector && !profile.location && profile.foundedYear == null && profile.employeeCount == null) {
-    return null;
-  }
+  const hasFact =
+    profile.description ||
+    profile.sector ||
+    profile.location ||
+    profile.latestRound ||
+    profile.linkedinUrl ||
+    profile.foundedYear != null ||
+    profile.employeeCount != null ||
+    profile.askUsd != null ||
+    profile.valuationUsd != null ||
+    profile.founders.length > 0;
+  if (!hasFact) return null;
   return profile;
+}
+
+function cleanHttpUrl(value: unknown): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withScheme);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString().slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
+function parseFounders(value: unknown): ParallelFounder[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const founders: ParallelFounder[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name.trim().slice(0, 120) : "";
+    if (name.length < 2) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const title = typeof row.title === "string" ? row.title.trim().slice(0, 80) : "";
+    founders.push({ name, title });
+    if (founders.length >= 8) break;
+  }
+  return founders;
 }
 
 function intInRange(value: unknown, min: number, max: number): number | null {
