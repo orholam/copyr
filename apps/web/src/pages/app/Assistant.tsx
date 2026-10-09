@@ -79,7 +79,6 @@ function formatToolLabel(name: string, args?: Record<string, unknown> | null): s
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"];
 const LAST_CONVERSATION_KEY = "copyr-assistant-conversation";
-const ALPHA_KEY = "copyr-assistant-alpha-dismissed";
 const CONVERSATION_STALE_MS = 5 * 60_000;
 
 function readLastConversation(): string | null {
@@ -115,13 +114,6 @@ export default function Assistant() {
     return fromUrl || readLastConversation();
   });
   const [draft, setDraft] = useState("");
-  const [alphaNote, setAlphaNote] = useState(() => {
-    try {
-      return localStorage.getItem(ALPHA_KEY) !== "1";
-    } catch {
-      return true;
-    }
-  });
   const [showHistory, setShowHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const skipUrlSync = useRef(true);
@@ -426,31 +418,6 @@ export default function Assistant() {
       <section className="relative flex min-w-0 flex-1 flex-col">
         {/* ambient backdrop */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-brand-50/70 to-transparent" />
-        {alphaNote && (
-          <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pt-3 md:hidden">
-            <div className="rounded-xl border border-paper-900/[0.1] bg-white px-3.5 py-2.5 shadow-sm">
-              <p className="text-[12.5px] font-semibold text-paper-900">Alpha, not a finished harness</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-paper-600">
-                This assistant is v0.1. It can miss, invent an id, or stop halfway. Check what it does before you trust it.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setAlphaNote(false);
-                  try {
-                    localStorage.setItem(ALPHA_KEY, "1");
-                  } catch {
-                    /* private mode */
-                  }
-                }}
-                className="mt-2 text-[11px] font-semibold text-paper-800"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        )}
-
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-8">
             {openingThread ? (
@@ -472,8 +439,7 @@ export default function Assistant() {
                 </h1>
                 <p className="animate-fade-up mt-2 max-w-md text-sm leading-relaxed text-paper-500 [animation-delay:120ms]">
                   One conversation over your entire fund — pipeline, diligence vaults,
-                  portfolio, codified agents and memory. Grounded in your workspace,
-                  never guessing.
+                  portfolio, codified agents and memory.
                 </p>
                 <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
                   {SUGGESTIONS.map((s, i) => (
@@ -492,6 +458,7 @@ export default function Assistant() {
             ) : (
               <div className="flex flex-col gap-5">
               {messages.map((m, idx) => {
+                const firstReplyId = messages.find((item) => item.role === "assistant" && item.content)?.id;
                 const delay = Math.min(idx * 30, 180);
                 const quiet = quietIds.current.has(m.id);
                 if (m.role === "tool") {
@@ -525,6 +492,7 @@ export default function Assistant() {
                             <RichText text={m.content} className="space-y-2" />
                           </div>
                         )}
+                        {m.id === firstReplyId && <TestingNote />}
                       </div>
                     </div>
                   );
@@ -546,7 +514,13 @@ export default function Assistant() {
                 </div>
               </div>
             )}
-            {turn && <LiveTurn tools={turn.tools} reply={turn.reply} />}
+            {turn && (
+              <LiveTurn
+                tools={turn.tools}
+                reply={turn.reply}
+                testingNote={!messages.some((item) => item.role === "assistant" && item.content) && !!turn.reply}
+              />
+            )}
             {sendError && (
               <p className="animate-shake pl-12 text-xs text-red-600">{sendError}</p>
             )}
@@ -588,9 +562,6 @@ export default function Assistant() {
                 {turn ? <Spinner /> : "Send"}
               </Button>
             </form>
-            <p className="mt-1.5 text-center text-[10px] text-paper-500">
-              Answers are grounded in workspace material with citations — verify anything before it leaves the building.
-            </p>
           </div>
         </div>
       </section>
@@ -598,7 +569,15 @@ export default function Assistant() {
   );
 }
 
-function LiveTurn({ tools, reply }: { tools: ToolRun[]; reply: string }) {
+function TestingNote() {
+  return (
+    <p className="max-w-md text-[11.5px] leading-relaxed text-paper-500">
+      v0.1 is a test assistant, not a full harness. It is here so we can try the workspace. Check anything it changes.
+    </p>
+  );
+}
+
+function LiveTurn({ tools, reply, testingNote }: { tools: ToolRun[]; reply: string; testingNote?: boolean }) {
   const working = tools.some((t) => t.status === "running");
   return (
     <div className="animate-fade-in flex items-start gap-3">
@@ -645,6 +624,7 @@ function LiveTurn({ tools, reply }: { tools: ToolRun[]; reply: string }) {
           <div className="rounded-lg border border-paper-900/[0.08] bg-white px-3.5 py-2.5 shadow-sm">
             <RichText text={reply} className="stream-caret space-y-2" />
           </div>
+          {testingNote && <TestingNote />}
         )}
       </div>
     </div>

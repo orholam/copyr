@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { activities, notes, users, portfolioUpdates, companies, memberships as memberships2 } from "@copyr/db/schema.js";
 import { sql } from "drizzle-orm";
 import type { ActivityDto, NoteDto, PortfolioUpdateDto } from "@copyr/contracts";
@@ -109,7 +109,7 @@ export async function listActivity(
     offset?: number;
   },
 ): Promise<{ items: ActivityDto[]; total: number }> {
-  const conds = [eq(activities.workspaceId, session.workspaceId)];
+  const conds = [eq(activities.workspaceId, session.workspaceId), ne(activities.type, "assistant.turn")];
   if (filter.entityType && filter.entityId)
     conds.push(and(eq(activities.entityType, filter.entityType as never), eq(activities.entityId, filter.entityId))!);
   else if (filter.entityType) conds.push(eq(activities.entityType, filter.entityType as never));

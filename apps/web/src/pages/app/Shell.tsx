@@ -564,9 +564,9 @@ function AssistantAlpha() {
           role="tooltip"
           className="absolute right-0 top-[calc(100%+8px)] z-30 w-72 rounded-lg border border-paper-900/[0.1] bg-paper-50 p-3 text-left shadow-pop"
         >
-          <p className="text-[12.5px] font-semibold text-paper-900">Alpha, not a finished harness</p>
+          <p className="text-[12.5px] font-semibold text-paper-900">v0.1 is for testing</p>
           <p className="mt-1 text-[12px] leading-relaxed text-paper-600">
-            This assistant is v0.1. It can miss, invent an id, or stop halfway. Check what it does before you trust it.
+            This is not a full harness. It exists so we can try the workspace. Check anything it changes.
           </p>
           <button type="button" onClick={dismiss} className="mt-2 text-[11px] font-semibold text-paper-800 hover:text-paper-950">
             Got it

@@ -3,7 +3,6 @@ import { conversations, messages } from "@copyr/db/schema.js";
 import type { ConversationDto, MessageDto } from "@copyr/contracts";
 import { requiredArgNames, fillMissingToolArgs, missingRequiredArgs, type AssistantToolSpec } from "@copyr/ai";
 import { CoreError, type CoreContext, type Session } from "../context.js";
-import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
 import { toIso } from "../mappers.js";
 
@@ -294,6 +293,11 @@ function toolDisplayArgs(args: Record<string, unknown>, resultText: string): Rec
   return shown;
 }
 
+/** A reply that only announces future work. The tools have not run yet. */
+export function isUnfinishedPlan(text: string): boolean {
+  return /\b(i will|i'll|i’ll|let me|i'm going to|i am going to|going to check|to identify which)\b/i.test(text);
+}
+
 /** A queued agent does not report back into the chat. Say where the result lands. */
 export function queuedAgentReply(runs: Array<{ agentName?: string | null; companyName?: string | null; alreadyQueued?: boolean }>): string {
   return runs
@@ -523,6 +527,7 @@ async function runTurn(
   let creditsUsed = 0;
   const seenThisTurn = new Set<string>();
   const queuedRuns: Array<{ agentName?: string; companyName?: string; alreadyQueued?: boolean }> = [];
+  let nudgedPlan = false;
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
@@ -590,7 +595,17 @@ async function runTurn(
       continue;
     }
 
-    finalReply = turn.reply ?? "(empty response)";
+    const planned = turn.reply ?? "";
+    if (!nudgedPlan && isUnfinishedPlan(planned)) {
+      nudgedPlan = true;
+      history.push({
+        role: "user",
+        content:
+          "That was a plan, not an answer. Call the tools now. Do not describe what you are about to do.",
+      });
+      continue;
+    }
+    finalReply = planned || "(empty response)";
     break;
   }
 
@@ -635,16 +650,6 @@ async function runTurn(
     });
   });
   void creditsUsed;
-
-  await logActivity(ctx, ctx.db, {
-    workspaceId: session.workspaceId,
-    entityType: "workspace",
-    entityId: session.workspaceId,
-    type: "assistant.turn",
-    summary: `Assistant handled: "${content.slice(0, 80)}"`,
-    actor: session.actor.userId ? "user" : "ai",
-    actorUserId: session.actor.userId,
-  });
 
   const all = await ctx.db
     .select()

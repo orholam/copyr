@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { queuedAgentReply } from "./assistant.js";
+import { isUnfinishedPlan, queuedAgentReply } from "./assistant.js";
+
+describe("isUnfinishedPlan", () => {
+  it("catches a reply that only announces future work", () => {
+    expect(isUnfinishedPlan("To identify which deals need attention, I will check the recent activity.")).toBe(true);
+    expect(isUnfinishedPlan("**Liminal Industries** has had no activity in 12 days.")).toBe(false);
+  });
+});
 
 describe("queuedAgentReply", () => {
   it("points at the company timeline and does not promise a later chat update", () => {
