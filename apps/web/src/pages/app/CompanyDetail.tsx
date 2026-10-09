@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
@@ -343,27 +343,15 @@ export default function CompanyDetail() {
               </div>
             </div>
           </div>
+          <AssigneeMenu
+            ownerUserId={c.ownerUserId}
+            members={members}
+            pending={saveOwner.isPending}
+            onChange={(ownerUserId) => saveOwner.mutate(ownerUserId)}
+          />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
-          <div>
-            <p className="text-[11px] font-medium text-paper-400">Assigned</p>
-            <select
-              aria-label="Assigned"
-              className="mt-0.5 max-w-[12rem] cursor-pointer bg-transparent text-[13px] font-medium text-paper-900 outline-none"
-              value={c.ownerUserId ?? ""}
-              disabled={saveOwner.isPending}
-              onChange={(e) => saveOwner.mutate(e.target.value || null)}
-            >
-              <option value="">Unassigned</option>
-              {c.ownerUserId && !members.some((m) => m.id === c.ownerUserId) && (
-                <option value={c.ownerUserId}>Assigned</option>
-              )}
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
           <Meta label="Sector" value={c.sector || "—"} />
           <Meta label="Location" value={c.location || "—"} />
           <Meta label="Founded" value={c.foundedYear ? String(c.foundedYear) : "—"} />
@@ -1136,6 +1124,101 @@ function Choice({
         ))}
       </select>
     </label>
+  );
+}
+
+function AssigneeMenu({
+  ownerUserId,
+  members,
+  pending,
+  onChange,
+}: {
+  ownerUserId: string | null;
+  members: Array<{ id: string; name: string }>;
+  pending: boolean;
+  onChange: (ownerUserId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const known = members.some((m) => m.id === ownerUserId);
+  const name = members.find((m) => m.id === ownerUserId)?.name ?? (ownerUserId ? "Assigned" : "Unassigned");
+  const options = [
+    { id: null as string | null, name: "Unassigned" },
+    ...(ownerUserId && !known ? [{ id: ownerUserId, name: "Assigned" }] : []),
+    ...members.map((m) => ({ id: m.id, name: m.name })),
+  ];
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Assigned"
+        disabled={pending}
+        onClick={() => setOpen((v) => !v)}
+        className="mt-1 inline-flex max-w-[12rem] items-center gap-1 rounded-full border border-paper-900/[0.1] bg-paper-50 py-1 pl-2.5 pr-2 text-[12px] font-medium text-paper-800 transition hover:border-paper-900/[0.18] disabled:opacity-50"
+      >
+        <span className="truncate">{name}</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cx("shrink-0 text-paper-400 transition", open && "rotate-180")}
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+4px)] z-30 min-w-[11rem] overflow-hidden rounded-lg border border-paper-900/[0.1] bg-paper-50 p-1 shadow-pop"
+        >
+          {options.map((opt) => {
+            const current = (ownerUserId ?? null) === opt.id;
+            return (
+              <button
+                key={opt.id ?? "none"}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onChange(opt.id);
+                  setOpen(false);
+                }}
+                className={cx(
+                  "flex w-full items-center rounded-md px-2 py-1.5 text-left text-[12.5px] font-medium",
+                  current ? "bg-paper-900/[0.05] text-paper-900" : "text-paper-700 hover:bg-paper-900/[0.04]",
+                )}
+              >
+                <span className="truncate">{opt.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
