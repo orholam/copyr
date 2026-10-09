@@ -98,6 +98,10 @@ export async function buildApp(opts: { core?: Core } = {}) {
   await app.register(import("@fastify/rate-limit").then((m) => m.default), {
     global: true,
     max: async (req: FastifyRequest) => {
+      const path = req.url.split("?")[0] ?? "";
+      // A chat turn shares the browser's request budget. Page warmup must not
+      // be able to reject the question itself.
+      if (path.startsWith("/api/v1/assistant/messages")) return 10_000;
       if (!req.url.startsWith("/api/")) return 10_000;
       const plan = await resolvePlan(req);
       return PLAN_LIMITS[plan] ?? 120;

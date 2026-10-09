@@ -481,6 +481,19 @@ async function runTurn(
   });
 
   const toolSpecs = await host.listTools();
+  let agentsCatalog = "";
+  try {
+    const { listAgents } = await import("./agents.js");
+    agentsCatalog = (await listAgents(ctx, session))
+      .filter((agent) => agent.isActive)
+      .map((agent) => {
+        const purpose = (agent.description || agent.kind).replace(/\s+/g, " ").trim();
+        return `- ${agent.name}: ${purpose.slice(0, 200)}`;
+      })
+      .join("\n");
+  } catch {
+    agentsCatalog = "";
+  }
 
   let rounds = 0;
   let finalReply: string | null = null;
@@ -489,7 +502,7 @@ async function runTurn(
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
-    const turn = await ctx.ai.assistantTurn({ messages: history, tools: toolSpecs });
+    const turn = await ctx.ai.assistantTurn({ messages: history, tools: toolSpecs, agentsCatalog });
     creditsUsed += 1;
 
     if (turn.toolCalls.length) {
@@ -563,7 +576,7 @@ async function runTurn(
         "If an agent was queued, name the agent and the company in one or two sentences and stop. " +
         "Do not repeat an earlier list of companies. Do not call tools.",
     });
-    const closing = await ctx.ai.assistantTurn({ messages: history, tools: [] });
+    const closing = await ctx.ai.assistantTurn({ messages: history, tools: [], agentsCatalog });
     creditsUsed += 1;
     finalReply =
       closing.reply?.trim() ||

@@ -156,6 +156,8 @@ export interface AssistantTurnMessage {
 export interface AssistantTurnInput {
   messages: AssistantTurnMessage[];
   tools: AssistantToolSpec[];
+  /** Name and one-line purpose of each active workspace agent. */
+  agentsCatalog?: string;
 }
 
 export interface AssistantToolCall {

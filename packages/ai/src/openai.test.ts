@@ -50,11 +50,13 @@ describe("OpenAiCompatibleProvider.assistantTurn", () => {
     const turn = await provider.assistantTurn({
       messages: [{ role: "user", content: "Add OpenAI and Anthropic to the pipeline" }],
       tools: [createCompanyTool],
+      agentsCatalog: "- Website Enricher: Fills empty company facts.",
     });
 
     expect(turn.toolCalls).toEqual([{ name: "create_company", args: { name: "OpenAI" } }]);
     const userMsg = (bodies[0]?.messages as Array<{ role: string; content: string }>).find((m) => m.role === "user");
     expect(userMsg?.content).toContain("create_company(name, domain?)");
+    expect(userMsg?.content).toContain("Website Enricher: Fills empty company facts.");
     const systemMsg = (bodies[0]?.messages as Array<{ role: string; content: string }>).find((m) => m.role === "system");
     expect(systemMsg?.content).toContain("never call a required-arg tool with empty args");
   });

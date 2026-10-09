@@ -359,7 +359,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "search_companies",
-    "Search companies by name/domain/sector; filter by status",
+    "Find companies by name, domain, or sector. This only identifies them. It does not enrich, screen, or change a company.",
     { ...listCompaniesQuerySchema.shape },
     tool(async (args) => {
       const q = listCompaniesQuerySchema.parse(args ?? {});
