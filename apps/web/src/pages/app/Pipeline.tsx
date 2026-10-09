@@ -47,6 +47,8 @@ interface Deal {
   priority: number;
   tags: string[];
   source: string;
+  /** Fractional key. Byte order, not dictionary order: "Zz" is before "a0". */
+  position: string;
   updatedAt: string;
   company: { id: string; name: string; domain: string | null; sector: string | null; description?: string | null; logoUrl?: string | null };
   fields: Record<string, string | number | boolean | string[] | null>;
@@ -73,6 +75,20 @@ const SOURCE_TAG: Record<string, [string, string]> = {
   manual: ["MAN", "border-paper-900/[0.14] bg-transparent text-paper-500"],
   agent: ["AI", "border-brand-200 bg-brand-50 text-brand-700"],
 };
+
+/**
+ * Stage order, then the fractional key compared as raw bytes.
+ * Postgres' default collation sorts "Zz" after "a0", which drops a prepended
+ * company into the middle of the table.
+ */
+function compareDeals(a: Deal, b: Deal, stageIndex: Map<string, number>): number {
+  const sa = stageIndex.get(a.stageId) ?? Number.MAX_SAFE_INTEGER;
+  const sb = stageIndex.get(b.stageId) ?? Number.MAX_SAFE_INTEGER;
+  if (sa !== sb) return sa - sb;
+  if (a.position < b.position) return -1;
+  if (a.position > b.position) return 1;
+  return 0;
+}
 
 /** Server orders deals by stage position, then deal position — splice to match. */
 function reorderDeals(
@@ -457,15 +473,20 @@ export default function Pipeline() {
     clearDrag();
   };
 
+  const stageIndex = useMemo(
+    () => new Map((pipeline?.stages ?? []).map((s, i) => [s.id, i])),
+    [pipeline],
+  );
+
   const boardDeals = useMemo(() => {
-    let items = dealsQ.data?.items ?? [];
+    let items = [...(dealsQ.data?.items ?? [])].sort((a, b) => compareDeals(a, b, stageIndex));
     for (const [id, mv] of Object.entries(pendingMoves)) {
       items = reorderDeals(items, { id, stageId: mv.stageId, beforeDealId: mv.beforeDealId });
     }
     if (syndicate === "invested") items = items.filter((d) => d.firmInvested === true);
     else if (syndicate !== "all") items = items.filter((d) => d.syndicateStatus === syndicate);
     return items;
-  }, [dealsQ.data, pendingMoves, syndicate]);
+  }, [dealsQ.data, pendingMoves, syndicate, stageIndex]);
 
   const byStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
@@ -566,9 +587,6 @@ export default function Pipeline() {
             {label}
           </button>
         ))}
-        <p className="ml-1 text-[12px] text-paper-500">
-          In queue means it has not been shown to the partnership yet. Presented means it already has.
-        </p>
       </div>
 
       {loading ? (
