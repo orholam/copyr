@@ -11,37 +11,38 @@ import { mapCompany } from "../mappers.js";
 import { loadSyndicatePeople } from "./syndicate.js";
 import { logActivity } from "../activity.js";
 import { resolveCompanyLogo } from "./logos.js";
-import { isPlaceholderCopy } from "../screenMaterial.js";
 import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
 import { resolvePipelineStage } from "./pipelines.js";
 
-async function tryFastWebsiteEnrich(domain?: string | null): Promise<{ description?: string; sector?: string }> {
-  if (!domain) return {};
-  const url = `https://${domain}`;
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "VentureLabsBot/0.1 (+https://venturelabs.vercel.app)" },
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!res.ok) return {};
-    const html = await res.text();
-    const title = html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1]?.trim() ?? "";
-    const desc =
-      html.match(/<meta[^>]+name="description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
-      html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
-      "";
-    const out: Record<string, string> = {};
-    if (desc && !isPlaceholderCopy(desc)) out.description = desc.slice(0, 800);
-    else if (title && !isPlaceholderCopy(title)) out.description = title.slice(0, 400);
-    // sector keyword heuristic (lightweight, no AI call before insert)
-    const lower = (desc + " " + title).toLowerCase();
-    if (/(inference|efficiency|developer|devtools|api|pipeline)/.test(lower)) out.sector = "Dev Tools";
-    else if (/(ai|machine learning|llm|model)/.test(lower)) out.sector = "AI/ML";
-    return out;
-  } catch {
-    return {};
-  }
+function queueWebsiteEnricher(ctx: CoreContext, session: Session, companyId: string) {
+  void (async () => {
+    try {
+      const { agents } = await import("@copyr/db/schema.js");
+      const [agent] = await ctx.db
+        .select()
+        .from(agents)
+        .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
+      if (agent) {
+        const { queueAgentRun } = await import("./agents.js");
+        await queueAgentRun(
+          ctx,
+          { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } },
+          agent.id,
+          { companyId, dealId: companyId, trigger: "workflow" },
+        );
+        return;
+      }
+    } catch {
+      // fall through to the raw job
+    }
+    void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
+    if (!ctx.boss) {
+      void import("./enrichment.js")
+        .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
+        .catch(() => undefined);
+    }
+  })().catch(() => undefined);
 }
 
 type Exec = Parameters<Parameters<CoreContext["db"]["transaction"]>[0]>[0];
@@ -175,13 +176,6 @@ export async function createCompany(
     domain = domain ?? resolved.domain;
     logoUrl = resolved.logoUrl;
   }
-
-  // Opportunistic fast enrichment before insert so Thesis Screener sees more than a bare name
-  let fastEnrich: { description?: string; sector?: string } = {};
-  if (domain && !input.description) {
-    fastEnrich = await tryFastWebsiteEnrich(domain);
-  }
-
   return ctx.db.transaction(async (tx) => {
     // dedupe by name/domain — unless explicitly updating an existing record
     const existing = await findCompanyMatch(ctx, tx, session.workspaceId, input.name, domain);
@@ -209,9 +203,9 @@ export async function createCompany(
         workspaceId: session.workspaceId,
         name: input.name,
         domain: domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "") ?? null,
-        sector: input.sector ?? fastEnrich.sector ?? null,
+        sector: input.sector ?? null,
         location: input.location ?? null,
-        description: input.description ?? fastEnrich.description ?? null,
+        description: input.description ?? null,
         linkedinUrl: input.linkedinUrl ?? null,
         logoUrl,
         foundedYear: input.foundedYear ?? null,
@@ -261,7 +255,11 @@ export async function createCompany(
     });
 
     return row.id;
-  }).then(async (id) => getCompany(ctx, session, String(id)));
+  }).then(async (id) => {
+    const companyId = String(id);
+    if (domain && !input.mergeWithExisting) queueWebsiteEnricher(ctx, session, companyId);
+    return getCompany(ctx, session, companyId);
+  });
 }
 
 export async function updateCompany(
@@ -331,33 +329,7 @@ export async function updateCompany(
     const companyId = String(id);
     const domain = (patch as Record<string, unknown>).domain as string | undefined;
     const cleaned = domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
-    if (cleaned) {
-      void (async () => {
-        try {
-          const { agents } = await import("@copyr/db/schema.js");
-          const [agent] = await ctx.db
-            .select()
-            .from(agents)
-            .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
-          if (agent) {
-            const { queueAgentRun } = await import("./agents.js");
-            await queueAgentRun(
-              ctx,
-              { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } },
-              agent.id,
-              { companyId, dealId: companyId, trigger: "workflow" },
-            );
-            return;
-          }
-        } catch {}
-        void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
-        if (!ctx.boss) {
-          void import("./enrichment.js")
-            .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
-            .catch(() => undefined);
-        }
-      })().catch(() => undefined);
-    }
+    if (cleaned) queueWebsiteEnricher(ctx, session, companyId);
     return getCompany(ctx, session, companyId);
   });
 }

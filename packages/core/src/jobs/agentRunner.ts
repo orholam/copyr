@@ -51,7 +51,7 @@ export async function executeAgentRun(
     // ── Website Enricher (custom but visible agent) ─────────────────
     if (agent.name === "Website Enricher") {
       if (!companyId) throw new Error("Website Enricher requires a company scope");
-      steps.push({ step: "enrich_fetch", status: "running", at: now() });
+      steps.push({ step: "parallel_research", status: "running", at: now() });
       const { enrichCompanyFromDomain } = await import("../services/enrichment.js");
       const result = await enrichCompanyFromDomain(ctx, workspaceId, companyId);
       output = {
@@ -61,7 +61,7 @@ export async function executeAgentRun(
         screened: false,
       };
       const sentence = result.enriched
-        ? `Enriched ${result.domain ?? "the website"}${result.detail ? ` (${result.detail.replace(/^patched /, "")})` : ""}.`
+        ? `Researched ${result.domain ?? "the company"} with Parallel${result.detail ? ` (${result.detail.replace(/^patched /, "")})` : ""}.`
         : explainEnrichmentSkip(result.domain, result.detail);
       steps.push({
         step: result.enriched ? "enriched" : "skipped",

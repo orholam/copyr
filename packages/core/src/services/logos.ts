@@ -60,7 +60,11 @@ export async function searchLogos(
   url.searchParams.set("method", method);
   url.searchParams.set("limit", String(Math.min(25, Math.max(1, limit))));
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${key}` },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json",
+      "User-Agent": "VentureLabs/1.0",
+    },
     signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) return [];

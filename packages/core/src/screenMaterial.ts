@@ -18,6 +18,8 @@ function humanizeEnrichDetail(detail: string | null | undefined): string {
   if (d === "nothing to fill") return "the website didn't add anything beyond what's already here";
   if (d === "company not found") return "the company record disappeared";
   if (d.startsWith("fetch")) return "the website didn't respond";
+  if (d === "PARALLEL_API_KEY is not set") return "company research is not configured";
+  if (d.startsWith("Parallel")) return "company research didn't finish";
   return d;
 }
 

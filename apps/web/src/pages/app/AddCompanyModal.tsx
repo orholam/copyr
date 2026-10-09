@@ -20,11 +20,13 @@ export default function AddCompanyModal({
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
   const [brandHits, setBrandHits] = useState<Array<{ name: string; domain: string; logoUrl: string }>>([]);
+  const [brandSearchError, setBrandSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = companyName.trim();
     if (q.length < 2 || website.trim()) {
       setBrandHits([]);
+      setBrandSearchError(null);
       return;
     }
     const handle = window.setTimeout(() => {
@@ -32,8 +34,14 @@ export default function AddCompanyModal({
         .get<{ items: Array<{ name: string; domain: string; logoUrl: string }> }>(
           `/logos/search?q=${encodeURIComponent(q)}&method=typeahead&limit=6`,
         )
-        .then((res) => setBrandHits(res.items ?? []))
-        .catch(() => setBrandHits([]));
+        .then((res) => {
+          setBrandHits(res.items ?? []);
+          setBrandSearchError(null);
+        })
+        .catch((err: unknown) => {
+          setBrandHits([]);
+          setBrandSearchError(err instanceof Error ? err.message : "Brand search failed");
+        });
     }, 200);
     return () => window.clearTimeout(handle);
   }, [companyName, website]);
@@ -191,6 +199,7 @@ export default function AddCompanyModal({
               placeholder="Acme Inc."
               autoComplete="off"
             />
+            {brandSearchError && <p className="mt-1 text-[12px] text-red-700">{brandSearchError}</p>}
             {brandHits.length > 0 && (
               <ul className="mt-1 overflow-hidden rounded-lg border border-paper-900/[0.1] bg-white">
                 {brandHits.map((hit) => (

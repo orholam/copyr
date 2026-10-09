@@ -95,9 +95,9 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       name: "Website Enricher",
       kind: "custom" as const,
       description:
-        "Fetches the company website and fills gaps (description, sector, custom fields) before screening — so manual entries with a domain get a fair thesis score.",
+        "Researches the company with Parallel and fills gaps (description, sector, location, founding year, headcount) before screening.",
       instructions:
-        "Fetch https://<domain>, extract title/meta description, infer sector/fields with the available heuristics, and write only missing values. Be best-effort and never clobber human input.",
+        "Research the company from public sources via Parallel. Write only missing values. Never clobber human input.",
       config: {},
       isSystem: true,
     },
@@ -129,6 +129,14 @@ export async function ensureSystemAgents(ctx: CoreContext, workspaceId: string):
       isSystem: true,
     },
   ];
+
+  const enricherCopy = wanted.find((w) => w.name === "Website Enricher");
+  if (enricherCopy && have.has(enricherCopy.name)) {
+    await ctx.db
+      .update(agents)
+      .set({ description: enricherCopy.description, instructions: enricherCopy.instructions })
+      .where(and(eq(agents.workspaceId, workspaceId), eq(agents.name, enricherCopy.name)));
+  }
 
   for (const w of wanted) {
     if (have.has(w.name)) continue;
@@ -171,7 +179,7 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
 }> = [
   {
     name: "Enrich new companies",
-    description: "When a company lands in the pipeline with a website, fetch it first so screening has material.",
+    description: "When a company lands in the pipeline with a website, research it with Parallel before screening.",
     triggerEvent: "company.created",
     conditions: [{ field: "company.domain", op: "exists" }],
     actions: [{ type: "run_agent", config: { agentName: "Website Enricher" } }],
@@ -274,6 +282,14 @@ export async function ensureDefaultAgentWorkflows(
       actions: spec.actions,
       isEnabled: spec.isEnabled,
     });
+  }
+
+  const enrichNew = existing.find((w) => w.name === "Enrich new companies");
+  if (enrichNew?.description?.includes("fetch")) {
+    await ctx.db
+      .update(workflows)
+      .set({ description: "When a company lands in the pipeline with a website, research it with Parallel before screening." })
+      .where(eq(workflows.id, enrichNew.id));
   }
 
   // Heal older “Screen new companies” rules that double-fired alongside enrichment.
