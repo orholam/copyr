@@ -38,6 +38,12 @@ const routes: FastifyPluginAsync = async (app) => {
     return core().content.listActivity(core().ctx, req.session!, query);
   });
 
+  app.patch("/activity/:id", async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z.object({ memo: z.string().min(1).max(40_000) }).parse(req.body);
+    return core().content.updateThesisMemo(core().ctx, req.session!, id, body.memo);
+  });
+
   /* ── portfolio updates ─────────────────────────────────────────── */
   app.get("/portfolio-updates", async (req) => {
     const query = z

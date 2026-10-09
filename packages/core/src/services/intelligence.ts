@@ -15,6 +15,7 @@ export interface ThesisMemo {
   companyName: string;
   memo: string;
   confidence: number;
+  activityId: string;
 }
 
 export async function generateThesis(
@@ -55,7 +56,7 @@ export async function generateThesis(
     return result;
   });
 
-  await logActivity(ctx, ctx.db, {
+  const activityId = await logActivity(ctx, ctx.db, {
     workspaceId: session.workspaceId,
     entityType: "company",
     entityId: companyId,
@@ -73,6 +74,7 @@ export async function generateThesis(
     companyName: company.name,
     memo: memo.memo,
     confidence: memo.confidence,
+    activityId,
   };
 }
 

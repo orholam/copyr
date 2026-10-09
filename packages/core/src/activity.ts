@@ -51,9 +51,9 @@ export async function logActivity(
   ctx: CoreContext,
   exec: DbOrTx,
   input: LogActivityInput,
-): Promise<void> {
+): Promise<string> {
   const createdAt = new Date();
-  await exec.insert(activities).values({
+  const [row] = await exec.insert(activities).values({
     workspaceId: input.workspaceId,
     entityType: input.entityType,
     entityId: input.entityId,
@@ -65,7 +65,10 @@ export async function logActivity(
     summary: input.summary,
     data: input.data ?? null,
     createdAt,
-  });
+  }).returning({ id: activities.id });
+
+  const notifyData = input.data ? { ...input.data } : null;
+  if (notifyData) delete notifyData.memo;
 
   const event: RealtimeEvent = {
     id: `${createdAt.getTime()}-${input.entityId}`,
@@ -77,7 +80,7 @@ export async function logActivity(
     type: input.type,
     actor: input.actor,
     summary: input.summary,
-    data: input.data ?? null,
+    data: notifyData,
     createdAt: createdAt.toISOString(),
   };
   const json = JSON.stringify(event);
@@ -95,4 +98,6 @@ export async function logActivity(
         console.error("[run-workflows-inline]", err instanceof Error ? err.message : err);
       });
   }
+  if (!row) throw new Error("activity insert failed");
+  return row.id;
 }

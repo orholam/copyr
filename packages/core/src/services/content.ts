@@ -131,6 +131,25 @@ export async function listActivity(
   return { items: rows.map(mapActivity), total };
 }
 
+export async function updateThesisMemo(
+  ctx: CoreContext,
+  session: Session,
+  activityId: string,
+  memo: string,
+): Promise<{ id: string; memo: string }> {
+  const [row] = await ctx.db
+    .select()
+    .from(activities)
+    .where(and(eq(activities.id, activityId), eq(activities.workspaceId, session.workspaceId)));
+  if (!row || row.type !== "thesis.generated") throw new CoreError("memo not found", { status: 404 });
+  const prev = row.data && typeof row.data === "object" ? (row.data as Record<string, unknown>) : {};
+  await ctx.db
+    .update(activities)
+    .set({ data: { ...prev, memo } })
+    .where(eq(activities.id, activityId));
+  return { id: activityId, memo };
+}
+
 /* ── portfolio timeline ────────────────────────────────────────────── */
 
 export async function listPortfolioUpdates(
