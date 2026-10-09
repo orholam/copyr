@@ -113,15 +113,6 @@ export async function executeAgentRun(
           at: now(),
         });
 
-        const reasons = Array.isArray(score.reasons) ? score.reasons : [];
-        const concerns = Array.isArray(score.concerns) ? score.concerns : [];
-        const noteBody =
-          `**${agent.name}** — fit ${score.fitScore}/100 → ${String(score.recommendation ?? "watch").toUpperCase()}\n\n` +
-          `${score.summary ?? ""}\n` +
-          (reasons.length ? `\nReasons:\n${reasons.map((r) => `- ${r}`).join("\n")}` : "") +
-          (concerns.length ? `\nConcerns:\n${concerns.map((c) => `- ${c}`).join("\n")}` : "");
-        await writeCompanyNote(ctx, workspaceId, companyId, noteBody.slice(0, 4000));
-
         const { upsertScreenTag } = await import("../screenTag.js");
         const [companyRow] = await ctx.db
           .select({ tags: companies.tags })
@@ -137,8 +128,6 @@ export async function executeAgentRun(
             })
             .where(eq(companies.id, companyId));
         }
-
-        steps.push({ step: "screening_note_written", status: "ok", at: now() });
       }
     } else if (agent.kind === "diligence_checklist") {
       const items = agent.config?.checklist?.length

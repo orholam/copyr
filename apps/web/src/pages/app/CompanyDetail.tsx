@@ -7,9 +7,9 @@ import {
   Avatar, Badge, Button, Field, Modal, Panel, Select, Skeleton, Spinner, cx, inputCls, money, timeAgo,
 } from "../../components/ui";
 import {
-  IconArrowUpRight, IconBot, IconDoc, IconMapPin, IconSpark, IconUser,
+  IconArrowUpRight, IconBot, IconDoc, IconSpark, IconUser,
 } from "../../components/icons";
-import { isScreenTag, parseScreenTag, stripScreenTags, type ScreenRec } from "../../lib/screenTag";
+import { isScreenTag, parseScreenTag, stripScreenTags, upsertScreenTag, type ScreenRec } from "../../lib/screenTag";
 
 function ScreenBadge({
   recommendation,
@@ -44,6 +44,7 @@ interface Company {
   description: string | null;
   foundedYear: number | null;
   employeeCount: number | null;
+  linkedinUrl: string | null;
   tags?: string[];
   status: string;
   source: string;
@@ -135,6 +136,8 @@ export default function CompanyDetail() {
     },
   });
 
+  const [scoreRec, setScoreRec] = useState<ScreenRec>("watch");
+  const [scoreFit, setScoreFit] = useState("");
   const [newTag, setNewTag] = useState("");
   const saveTags = useMutation({
     mutationFn: (tags: string[]) => api.patch(`/companies/${id}`, { tags }),
@@ -215,6 +218,13 @@ export default function CompanyDetail() {
     },
   });
 
+  const loadedScreen = parseScreenTag(companyQ.data && !Array.isArray(companyQ.data) ? companyQ.data.tags : undefined);
+  useEffect(() => {
+    if (!loadedScreen) return;
+    setScoreRec(loadedScreen.recommendation);
+    setScoreFit(loadedScreen.fitScore != null ? String(loadedScreen.fitScore) : "");
+  }, [loadedScreen?.recommendation, loadedScreen?.fitScore, companyQ.data && !Array.isArray(companyQ.data) ? companyQ.data.id : null]);
+
   if (companyQ.isError) {
     return (
       <div className="animate-fade-up rounded-xl border border-red-500/20 bg-red-500/[0.06] p-6 text-sm text-red-700">
@@ -265,21 +275,6 @@ export default function CompanyDetail() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              setReadingMemo(null);
-              setReadingMemoId(null);
-              setMemoEditing(false);
-              genThesis.reset();
-              setThesisOpen(true);
-              genThesis.mutate();
-            }}
-            disabled={genThesis.isPending}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-paper-900/[0.14] bg-paper-100 px-3 text-xs font-medium text-paper-800 transition hover:bg-paper-200/70"
-          >
-            {genThesis.isPending ? "Drafting…" : "Thesis"}
-          </button>
-          <button
-            type="button"
             onClick={() => setShareOpen(true)}
             className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700"
           >
@@ -310,19 +305,15 @@ export default function CompanyDetail() {
                     {c.domain} <IconArrowUpRight width={11} height={11} />
                   </a>
                 )}
-                {c.sector && <Badge tone="indigo">{c.sector}</Badge>}
-                {c.location && (
-                  <span className="flex items-center gap-1"><IconMapPin width={12} height={12} className="text-paper-500" />{c.location}</span>
+                {c.linkedinUrl && (
+                  <a href={c.linkedinUrl} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">
+                    LinkedIn
+                  </a>
                 )}
-                {c.foundedYear && <span>Founded {c.foundedYear}</span>}
-                {c.employeeCount != null && <span>{c.employeeCount.toLocaleString()} people</span>}
               </div>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            {screen && !enrichBlocked && (
-              <ScreenBadge recommendation={screen.recommendation} fitScore={screen.fitScore} />
-            )}
             {c.syndicateStatus && (
               <Badge tone={c.syndicateStatus === "presented" ? "green" : "amber"}>
                 {c.syndicateStatus === "presented" ? "Presented" : "In queue"}
@@ -340,6 +331,10 @@ export default function CompanyDetail() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
+          <Meta label="Sector" value={c.sector || "—"} />
+          <Meta label="Location" value={c.location || "—"} />
+          <Meta label="Founded" value={c.foundedYear ? String(c.foundedYear) : "—"} />
+          <Meta label="Team" value={c.employeeCount != null ? c.employeeCount.toLocaleString() : "—"} />
           <Meta label="Round" value={c.roundLabel || c.roundStage || "—"} />
           <Meta label="Ask" value={money(c.askAmount)} accent />
           <Meta label="Valuation" value={money(c.valuation)} />
@@ -400,27 +395,42 @@ export default function CompanyDetail() {
         onPatch={(patch) => saveSyndicate.mutateAsync(patch)}
       />
 
-      {latestMemo && (
-        <button
-          type="button"
-          onClick={() => {
-            setReadingMemo(latestMemo);
-            setReadingMemoId(latestMemoId);
-            setMemoEditing(false);
-            setThesisOpen(true);
-          }}
-          className="group mt-4 w-full overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white text-left transition hover:border-paper-900/20 hover:shadow-[0_10px_28px_-16px_rgba(23,22,19,0.35)]"
-        >
-          <div className="px-5 pt-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Investment memo</p>
-            <p className="mt-1 font-serif text-[18px] font-semibold tracking-tight text-paper-900">Latest thesis</p>
-          </div>
-          <div className="relative mt-3 max-h-52 overflow-hidden px-5 pb-2">
-            <MemoView text={latestMemo} />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white via-white/90 to-transparent" />
-          </div>
-        </button>
-      )}
+      <ThesisCard
+        screen={enrichBlocked ? null : screen}
+        summary={enrichBlocked ? null : screenSummary(activityQ.data?.items ?? [])}
+        blocked={enrichBlocked}
+        memo={latestMemo}
+        scoreRec={scoreRec}
+        scoreFit={scoreFit}
+        scoreDirty={
+          !!screen &&
+          (scoreRec !== screen.recommendation || scoreFit !== (screen.fitScore != null ? String(screen.fitScore) : ""))
+        }
+        savingScore={saveTags.isPending}
+        drafting={genThesis.isPending}
+        onScoreRec={setScoreRec}
+        onScoreFit={setScoreFit}
+        onSaveScore={() => {
+          const fit = Number(scoreFit);
+          if (!Number.isFinite(fit)) return;
+          saveTags.mutate(upsertScreenTag(c.tags, scoreRec, fit));
+        }}
+        onOpenMemo={() => {
+          if (!latestMemo) return;
+          setReadingMemo(latestMemo);
+          setReadingMemoId(latestMemoId);
+          setMemoEditing(false);
+          setThesisOpen(true);
+        }}
+        onDraft={() => {
+          setReadingMemo(null);
+          setReadingMemoId(null);
+          setMemoEditing(false);
+          genThesis.reset();
+          setThesisOpen(true);
+          genThesis.mutate();
+        }}
+      />
 
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_300px]">
         <div className="space-y-5">
@@ -584,7 +594,6 @@ export default function CompanyDetail() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20">
-          <CompanyThesisScreen companyId={id!} tags={c.tags} />
           <CompanyDiligenceTasks companyId={id!} />
           <CompanyWorkflowsStrip />
           <div className="panel p-3.5">
@@ -1115,10 +1124,8 @@ function enrichOutcome(items: Activity[]): "failed" | "ok" | "none" {
   return failed ? "failed" : "none";
 }
 
-function visibleNotes(notes: Note[], activity: Activity[]): Note[] {
-  const unique = uniqueNotes(notes);
-  if (enrichOutcome(activity) !== "failed") return unique;
-  return unique.filter((n) => !/Thesis Screener/i.test(n.body));
+function visibleNotes(notes: Note[], _activity: Activity[]): Note[] {
+  return uniqueNotes(notes).filter((n) => !/Thesis Screener/i.test(n.body));
 }
 
 function timelineItems(items: Activity[]): Activity[] {
@@ -1324,19 +1331,7 @@ function ActivityDetail({
       </ul>
     );
   }
-  if (type === "agent_run.completed" && output?.recommendation) {
-    return (
-      <div className="mt-1.5 rounded-md bg-paper-100 px-2.5 py-2 text-[12px] text-paper-700">
-        <p className="font-medium text-paper-900">
-          {String(output.recommendation).toUpperCase()}
-          {output.fitScore != null ? ` · fit ${String(output.fitScore)}/100` : ""}
-        </p>
-        {typeof output.summary === "string" && (
-          <p className="mt-1 text-paper-600">{output.summary}</p>
-        )}
-      </div>
-    );
-  }
+  if (type === "agent_run.completed" && output?.recommendation) return null;
   if (type === "workflow.run" && steps?.length) {
     return (
       <ul className="mt-1 space-y-0.5 text-[11px] text-paper-500">
@@ -1416,88 +1411,127 @@ function CompanyDiligenceTasks({ companyId }: { companyId: string }) {
   );
 }
 
-function CompanyThesisScreen({
-  companyId,
-  tags,
-}: {
-  companyId: string;
-  tags?: string[];
-}) {
-  const activityQ = useQuery({
-    queryKey: ["activity", companyId],
-    queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${companyId}&limit=30`),
-  });
-  const stamp = parseScreenTag(tags);
-  const blocked = enrichOutcome(activityQ.data?.items ?? []) === "failed";
-  const screenActivity = blocked
-    ? undefined
-    : (activityQ.data?.items ?? []).find(
+function screenSummary(items: Activity[]): string | null {
+  const run = items.find(
     (a) =>
       a.type === "agent_run.completed" &&
       a.data?.output &&
       typeof a.data.output === "object" &&
       "recommendation" in (a.data.output as object),
   );
-  const output =
-    screenActivity?.data?.output && typeof screenActivity.data.output === "object"
-      ? (screenActivity.data.output as Record<string, unknown>)
-      : null;
-  const recommendation = blocked
-    ? undefined
-    : ((typeof output?.recommendation === "string" ? output.recommendation : stamp?.recommendation) as
-        | ScreenRec
-        | undefined);
-  const fitScore =
-    typeof output?.fitScore === "number"
-      ? output.fitScore
-      : stamp?.fitScore ?? null;
+  const output = run?.data?.output;
+  if (!output || typeof output !== "object") return null;
+  const summary = (output as { summary?: unknown }).summary;
+  return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+}
 
-  if (blocked) {
-    return (
-      <div className="panel p-3.5">
-        <h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
-          <IconBot width={13} height={13} /> Thesis screen
-        </h2>
-        <p className="text-[12.5px] leading-snug text-paper-600">
-          Didn't run. The website couldn't be enriched, so there was nothing to score.
-        </p>
-      </div>
-    );
-  }
-
-  if (!recommendation && !activityQ.isLoading) return null;
-
+function ThesisCard({
+  screen,
+  summary,
+  blocked,
+  memo,
+  scoreRec,
+  scoreFit,
+  scoreDirty,
+  savingScore,
+  drafting,
+  onScoreRec,
+  onScoreFit,
+  onSaveScore,
+  onOpenMemo,
+  onDraft,
+}: {
+  screen: { recommendation: ScreenRec; fitScore: number | null } | null;
+  summary: string | null;
+  blocked: boolean;
+  memo: string | null;
+  scoreRec: ScreenRec;
+  scoreFit: string;
+  scoreDirty: boolean;
+  savingScore: boolean;
+  drafting: boolean;
+  onScoreRec: (value: ScreenRec) => void;
+  onScoreFit: (value: string) => void;
+  onSaveScore: () => void;
+  onOpenMemo: () => void;
+  onDraft: () => void;
+}) {
   return (
-    <div className="panel p-3.5">
-      <h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
-        <IconBot width={13} height={13} /> Thesis screen
-      </h2>
-      {activityQ.isLoading && !recommendation ? (
-        <Skeleton className="h-12 w-full" />
-      ) : recommendation ? (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <ScreenBadge
-              recommendation={recommendation}
-              fitScore={typeof fitScore === "number" ? fitScore : null}
-            />
-            <Link to="/app/automations" className="text-[11px] font-medium text-brand-700 hover:underline">
-              Agents
-            </Link>
-          </div>
-          {typeof output?.summary === "string" && (
-            <p className="text-[12px] leading-snug text-paper-600">{output.summary}</p>
-          )}
-          {Array.isArray(output?.reasons) && (output.reasons as unknown[]).length > 0 && (
-            <ul className="space-y-0.5 text-[11px] text-paper-500">
-              {(output.reasons as unknown[]).slice(0, 3).map((r, i) => (
-                <li key={i}>+ {String(r)}</li>
-              ))}
-            </ul>
-          )}
+    <section className="mt-4 overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Thesis</p>
+          <p className="mt-1 font-serif text-[18px] font-semibold tracking-tight text-paper-900">
+            {blocked ? "Not scored" : screen ? "How this fits" : "No score yet"}
+          </p>
         </div>
-      ) : null}
-    </div>
+        {screen && (
+          <div className="flex flex-wrap items-center gap-2">
+            <ScreenBadge recommendation={scoreRec} fitScore={scoreFit.trim() ? Number(scoreFit) : screen.fitScore} />
+            <select
+              aria-label="Recommendation"
+              value={scoreRec}
+              onChange={(e) => onScoreRec(e.target.value as ScreenRec)}
+              className="h-8 rounded-lg border border-paper-900/[0.12] bg-white px-2 text-[12px] font-medium text-paper-800"
+            >
+              <option value="advance">Advance</option>
+              <option value="watch">Watch</option>
+              <option value="pass">Pass</option>
+            </select>
+            <input
+              aria-label="Fit score"
+              inputMode="numeric"
+              value={scoreFit}
+              onChange={(e) => onScoreFit(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+              className="h-8 w-14 rounded-lg border border-paper-900/[0.12] px-2 text-center text-[12px] font-semibold text-paper-900"
+            />
+            {scoreDirty && (
+              <button
+                type="button"
+                disabled={savingScore || !scoreFit.trim()}
+                onClick={onSaveScore}
+                className="h-8 rounded-lg bg-paper-900 px-2.5 text-[12px] font-semibold text-white disabled:opacity-50"
+              >
+                {savingScore ? "Saving…" : "Save"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="px-5 pb-4 pt-2">
+        {blocked ? (
+          <p className="text-[13px] leading-relaxed text-paper-600">
+            Screening did not run. Enrichment did not add anything to score.
+          </p>
+        ) : summary ? (
+          <p className="text-[13px] leading-relaxed text-paper-600">{summary}</p>
+        ) : (
+          <p className="text-[13px] leading-relaxed text-paper-500">
+            {screen ? "The screener left no written summary." : "The screener has not scored this company yet."}
+          </p>
+        )}
+      </div>
+      {memo ? (
+        <button type="button" onClick={onOpenMemo} className="group relative block w-full border-t border-paper-900/[0.06] px-5 pb-2 pt-3 text-left">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Memo</p>
+          <div className="relative mt-2 max-h-52 overflow-hidden">
+            <MemoView text={memo} />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white via-white/90 to-transparent" />
+          </div>
+        </button>
+      ) : (
+        <div className="border-t border-paper-900/[0.06] px-5 py-3">
+          <button
+            type="button"
+            disabled={drafting}
+            onClick={onDraft}
+            className="text-[13px] font-semibold text-brand-700 hover:underline disabled:opacity-50"
+          >
+            {drafting ? "Drafting the memo…" : "Draft the memo"}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
