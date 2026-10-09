@@ -19,6 +19,7 @@ import {
   type UpdateClassification,
 } from "./types.js";
 import { formatToolCatalog, normalizeAssistantToolCalls } from "./assistant-tools.js";
+import { composeThesisMemo } from "./thesisMemo.js";
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -211,15 +212,28 @@ export class OpenAiCompatibleProvider implements AiProvider {
   }
 
   async generateThesis(input: ThesisInput): Promise<ThesisMemoOutput> {
-    const res = await this.structured<{ memo: string; confidence?: number }>(
+    const res = await this.structured<{ memo?: string; confidence?: number }>(
       "investment_thesis",
-      zodLikeJsonSchema(),
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["memo"],
+        properties: {
+          memo: {
+            type: "string",
+            description:
+              "The full investment memo in markdown, with sections What they do, Why it fits, Key risks, and Suggested next steps.",
+          },
+          confidence: { type: "number" },
+        },
+      },
       [
         {
           role: "system",
           content:
-            "You are a VC associate drafting a concise internal investment memo (markdown). " +
-            "Sections: What they do / Why it fits / Key risks / Suggested next steps. " +
+            "You are a VC associate drafting a concise internal investment memo. " +
+            "Return JSON with a single markdown string in memo. " +
+            "Sections inside that string: What they do / Why it fits / Key risks / Suggested next steps. " +
             "Only use facts present in the provided material; flag unknowns explicitly.",
         },
         {
@@ -228,10 +242,11 @@ export class OpenAiCompatibleProvider implements AiProvider {
         },
       ],
     );
-    if (typeof res.memo !== "string" || !res.memo.trim()) {
+    const memo = composeThesisMemo(res);
+    if (!memo) {
       throw new AiError(`investment_thesis returned no memo: ${JSON.stringify(res).slice(0, 200)}`);
     }
-    return { memo: res.memo, confidence: clamp01(res.confidence, 0.8) };
+    return { memo, confidence: clamp01(res.confidence, 0.8) };
   }
 
   async classifyUpdate(text: string): Promise<UpdateClassification> {
