@@ -621,10 +621,12 @@ function LiveTurn({ tools, reply, testingNote }: { tools: ToolRun[]; reply: stri
             </span>
           </div>
         ) : (
-          <div className="rounded-lg border border-paper-900/[0.08] bg-white px-3.5 py-2.5 shadow-sm">
-            <RichText text={reply} className="stream-caret space-y-2" />
-          </div>
-          {testingNote && <TestingNote />}
+          <>
+            <div className="rounded-lg border border-paper-900/[0.08] bg-white px-3.5 py-2.5 shadow-sm">
+              <RichText text={reply} className="stream-caret space-y-2" />
+            </div>
+            {testingNote && <TestingNote />}
+          </>
         )}
       </div>
     </div>
