@@ -49,6 +49,7 @@ interface Company {
   status: string;
   source: string;
   stageId: string;
+  ownerUserId: string | null;
   roundStage: string | null;
   roundLabel: string | null;
   askAmount: number | null;
@@ -192,6 +193,21 @@ export default function CompanyDetail() {
     },
   });
 
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: () =>
+      api.get<{ workspace: { members: Array<{ id: string; name: string }> } }>("/me"),
+  });
+  const members = meQ.data?.workspace.members ?? [];
+  const saveOwner = useMutation({
+    mutationFn: (ownerUserId: string | null) => api.patch(`/deals/${id}`, { ownerUserId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["company", id] });
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      void qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+
   const removeCompany = useMutation({
     mutationFn: () => api.delete(`/companies/${id}`),
     onSuccess: () => {
@@ -330,6 +346,24 @@ export default function CompanyDetail() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-paper-900/[0.09] pt-3.5">
+          <div>
+            <p className="text-[11px] font-medium text-paper-400">Assigned</p>
+            <select
+              aria-label="Assigned"
+              className="mt-0.5 max-w-[12rem] cursor-pointer bg-transparent text-[13px] font-medium text-paper-900 outline-none"
+              value={c.ownerUserId ?? ""}
+              disabled={saveOwner.isPending}
+              onChange={(e) => saveOwner.mutate(e.target.value || null)}
+            >
+              <option value="">Unassigned</option>
+              {c.ownerUserId && !members.some((m) => m.id === c.ownerUserId) && (
+                <option value={c.ownerUserId}>Assigned</option>
+              )}
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
           <Meta label="Sector" value={c.sector || "—"} />
           <Meta label="Location" value={c.location || "—"} />
           <Meta label="Founded" value={c.foundedYear ? String(c.foundedYear) : "—"} />
