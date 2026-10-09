@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   agentRuns,
   agents,
@@ -145,7 +145,7 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
     | "extraction.completed"
     | "document.parsed"
     | "company.updated";
-  conditions: Array<{ field: string; op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists"; value?: unknown }>;
+  conditions: Array<{ field: string; op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists" | "nexists"; value?: unknown }>;
   actions: Array<{
     type: "add_note" | "move_deal" | "set_deal_fields" | "set_company_fields" | "create_portfolio_update" | "run_agent";
     config: Record<string, unknown>;
@@ -162,17 +162,21 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
   },
   {
     name: "Screen new companies",
-    description: "When a company lands in the pipeline, run Thesis Screener for an advance / watch / pass call.",
+    description:
+      "When a company lands without a website, screen immediately. Companies with a domain are enriched first, then screened by “Screen after enrichment”.",
     triggerEvent: "company.created",
-    conditions: [],
+    conditions: [{ field: "company.domain", op: "nexists" }],
     actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
     isEnabled: true,
   },
   {
     name: "Screen after enrichment",
-    description: "After the Website Enricher runs, re-screen with the enriched context.",
+    description: "After the Website Enricher actually fills something in, screen with that context. A skip does not screen.",
     triggerEvent: "agent_run.completed",
-    conditions: [{ field: "agent.name", op: "eq", value: "Website Enricher" }],
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Website Enricher" },
+      { field: "output.enriched", op: "eq", value: true },
+    ],
     actions: [{ type: "run_agent", config: { agentName: "Thesis Screener" } }],
     isEnabled: true,
   },
@@ -237,7 +241,7 @@ export async function ensureDefaultAgentWorkflows(
   workspaceId: string,
 ): Promise<void> {
   const existing = await ctx.db
-    .select({ name: workflows.name })
+    .select()
     .from(workflows)
     .where(eq(workflows.workspaceId, workspaceId));
   const have = new Set(existing.map((e) => e.name));
@@ -253,6 +257,53 @@ export async function ensureDefaultAgentWorkflows(
       actions: spec.actions,
       isEnabled: spec.isEnabled,
     });
+  }
+
+  // Heal older “Screen new companies” rules that double-fired alongside enrichment.
+  const screenNew = existing.find((w) => w.name === "Screen new companies");
+  if (screenNew) {
+    const conds = screenNew.conditions ?? [];
+    const alreadyGated = conds.some(
+      (c) => c.field === "company.domain" && (c.op === "nexists" || c.op === "eq"),
+    );
+    if (!alreadyGated) {
+      await ctx.db
+        .update(workflows)
+        .set({
+          conditions: [{ field: "company.domain", op: "nexists" }],
+          description:
+            "When a company lands without a website, screen immediately. Companies with a domain are enriched first, then screened by “Screen after enrichment”.",
+        })
+        .where(eq(workflows.id, screenNew.id));
+    }
+  }
+
+  // A skipped enricher used to complete successfully and re-trigger screening.
+  const screenAfter = existing.find((w) => w.name === "Screen after enrichment");
+  if (screenAfter) {
+    const conds = screenAfter.conditions ?? [];
+    const requiresEnrichment = conds.some((c) => c.field === "output.enriched");
+    if (!requiresEnrichment) {
+      await ctx.db
+        .update(workflows)
+        .set({
+          conditions: [...conds, { field: "output.enriched", op: "eq", value: true }],
+          description:
+            "After the Website Enricher actually fills something in, screen with that context. A skip does not screen.",
+        })
+        .where(eq(workflows.id, screenAfter.id));
+    }
+  }
+
+  // Identical default names from older seeds each fired on the same event.
+  const seenNames = new Set<string>();
+  for (const row of existing) {
+    if (!DEFAULT_WORKFLOW_SPECS.some((s) => s.name === row.name)) continue;
+    if (seenNames.has(row.name)) {
+      await ctx.db.update(workflows).set({ isEnabled: false }).where(eq(workflows.id, row.id));
+      continue;
+    }
+    seenNames.add(row.name);
   }
 }
 
@@ -335,21 +386,48 @@ export async function queueAgentRun(
     throw new CoreError("agent is not active", { code: "agent_inactive", status: 409 });
   }
 
-  const [run] = await ctx.db
-    .insert(agentRuns)
-    .values({
-      workspaceId: session.workspaceId,
-      agentId,
-      status: "queued",
-      trigger: input.trigger ?? "manual",
-      companyId: input.companyId ?? null,
-      dealId: input.dealId ?? null,
-      spaceId: input.spaceId ?? null,
-      taskId: input.taskId ?? null,
-      input: input as Record<string, unknown>,
-      steps: [{ step: "queued", status: "ok", at: new Date().toISOString() }],
-    })
-    .returning();
+  const created = await ctx.db.transaction(async (tx) => {
+    if (input.companyId && input.trigger !== "manual") {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`agent-run:${agentId}:${input.companyId}`}))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.agentId, agentId),
+            eq(agentRuns.companyId, input.companyId),
+            eq(agentRuns.workspaceId, session.workspaceId),
+            inArray(agentRuns.status, ["queued", "running"]),
+          ),
+        )
+        .limit(1);
+      if (existing) return { row: existing, reused: true as const };
+    }
+
+    const [row] = await tx
+      .insert(agentRuns)
+      .values({
+        workspaceId: session.workspaceId,
+        agentId,
+        status: "queued",
+        trigger: input.trigger ?? "manual",
+        companyId: input.companyId ?? null,
+        dealId: input.dealId ?? null,
+        spaceId: input.spaceId ?? null,
+        taskId: input.taskId ?? null,
+        input: input as Record<string, unknown>,
+        steps: [{ step: "queued", status: "ok", at: new Date().toISOString() }],
+      })
+      .returning();
+    return { row: row!, reused: false as const };
+  });
+
+  const run = created.row;
+  if (created.reused) {
+    return { run: mapRun(run, agent.name) };
+  }
 
   await logActivity(ctx, ctx.db, {
     workspaceId: session.workspaceId,
@@ -361,6 +439,7 @@ export async function queueAgentRun(
     summary: `Agent "${agent.name}" queued (${run.trigger})`,
     actor: session.actor?.userId ? "user" : "ai",
     actorUserId: session.actor?.userId ?? null,
+    data: { timeline: "hidden" },
   });
 
   if (input.runInline) {
@@ -430,7 +509,16 @@ export async function gatherCompanyContext(
   ctx: CoreContext,
   workspaceId: string,
   companyId: string,
-): Promise<{ companyName: string; sector: string | null; roundStage: string | null; askAmount: number | null; text: string }> {
+): Promise<{
+  companyName: string;
+  sector: string | null;
+  roundStage: string | null;
+  askAmount: number | null;
+  domain: string | null;
+  description: string | null;
+  documentChars: number;
+  text: string;
+}> {
   const [company] = await ctx.db.select().from(companies).where(eq(companies.id, companyId));
   if (!company || company.workspaceId !== workspaceId) {
     throw new CoreError("company not found", { status: 404 });
@@ -479,6 +567,9 @@ export async function gatherCompanyContext(
     sector: company.sector,
     roundStage: deal?.roundStage ?? null,
     askAmount: deal?.askAmount ? Number(deal.askAmount) : null,
+    domain: company.domain,
+    description: company.description,
+    documentChars: docs.reduce((n, d) => n + (d.textContent?.length ?? 0), 0),
     text,
   };
 }

@@ -214,7 +214,9 @@ export default function CompanyDetail() {
   const stage = allStages.find((s) => s.id === c.stageId);
   const fieldEntries = Object.entries(c.fields ?? {}).filter(([, v]) => v !== null && v !== undefined);
   const screen = parseScreenTag(c.tags);
+  const enrichBlocked = enrichOutcome(activityQ.data?.items ?? []) === "failed";
   const userTags = stripScreenTags(c.tags ?? []);
+  const shownNotes = visibleNotes(notesQ.data ?? [], activityQ.data?.items ?? []);
 
   return (
     <div className="animate-fade-up mx-auto max-w-5xl pb-10">
@@ -267,7 +269,7 @@ export default function CompanyDetail() {
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            {screen && (
+            {screen && !enrichBlocked && (
               <ScreenBadge recommendation={screen.recommendation} fitScore={screen.fitScore} />
             )}
             {c.syndicateStatus && (
@@ -448,7 +450,7 @@ export default function CompanyDetail() {
               <Button size="sm" variant="subtle" disabled={!noteBody.trim() || addNote.isPending}>Add</Button>
             </div>
             <ul className="mt-4 space-y-2">
-              {(notesQ.data ?? []).map((n) => (
+              {shownNotes.map((n) => (
                 <li key={n.id} className={cx("rounded-lg px-3 py-2.5", n.pinned ? "border border-amber-500/25 bg-amber-500/[0.07]" : "bg-paper-100")}>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper-800">
                     {n.body.replace(/\*\*/g, "")}
@@ -456,13 +458,13 @@ export default function CompanyDetail() {
                   <p className="mt-1 text-[11px] text-paper-500">{n.authorName ?? "system"} · {timeAgo(n.createdAt)}</p>
                 </li>
               ))}
-              {!notesQ.data?.length && <li className="text-sm text-paper-500">No notes yet.</li>}
+              {!shownNotes.length && <li className="text-sm text-paper-500">No notes yet.</li>}
             </ul>
           </Panel>
 
           <Panel title="Timeline">
             <ul className="relative space-y-4 border-l border-paper-900/[0.11] pl-5">
-              {(activityQ.data?.items ?? []).map((a) => (
+              {timelineItems(activityQ.data?.items ?? []).map((a) => (
                 <li key={a.id} className="relative">
                   <span
                     className={cx(
@@ -485,7 +487,7 @@ export default function CompanyDetail() {
                   </div>
                 </li>
               ))}
-              {!activityQ.data?.items.length && <li className="text-sm text-paper-500">No activity.</li>}
+              {!timelineItems(activityQ.data?.items ?? []).length && <li className="text-sm text-paper-500">No activity.</li>}
             </ul>
           </Panel>
         </div>
@@ -840,17 +842,96 @@ function Meta({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+function uniqueNotes(items: Note[]): Note[] {
+  const seen = new Set<string>();
+  return items.filter((n) => {
+    const key = n.body.replace(/\s+/g, " ").trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function enrichOutcome(items: Activity[]): "failed" | "ok" | "none" {
+  let failed = false;
+  for (const a of items) {
+    const output =
+      a.data?.output && typeof a.data.output === "object" ? (a.data.output as Record<string, unknown>) : null;
+    const name = typeof a.data?.agentName === "string" ? a.data.agentName : "";
+    const isEnricher = name === "Website Enricher" || a.summary.startsWith("Website Enricher");
+    if (!isEnricher) continue;
+    if (output?.enriched === true) return "ok";
+    if (output?.enriched === false || /skipped/i.test(a.summary)) failed = true;
+  }
+  return failed ? "failed" : "none";
+}
+
+function visibleNotes(notes: Note[], activity: Activity[]): Note[] {
+  const unique = uniqueNotes(notes);
+  if (enrichOutcome(activity) !== "failed") return unique;
+  return unique.filter((n) => !/Thesis Screener/i.test(n.body));
+}
+
+function timelineItems(items: Activity[]): Activity[] {
+  const suppressScores = enrichOutcome(items) === "failed";
+  const seen = new Set<string>();
+  const out: Activity[] = [];
+  for (const a of items) {
+    if (a.type === "agent_run.queued" || a.data?.timeline === "hidden" || a.data?.silent === true) continue;
+    if (a.type === "workflow.run" && isDispatchNoise(a)) continue;
+    if (suppressScores && isThesisScore(a)) continue;
+    const summary = presentActivitySummary(a);
+    const key = summary.replace(/\s+/g, " ").trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...a, summary });
+  }
+  return out;
+}
+
+function isThesisScore(a: Activity): boolean {
+  if (a.data?.agentName === "Thesis Screener") return true;
+  return /Thesis Screener scored/i.test(a.summary);
+}
+
+function isDispatchNoise(a: Activity): boolean {
+  if (/dispatched "|→ ran |\(run [0-9a-f]{6,}\)/i.test(a.summary)) return true;
+  const steps = Array.isArray(a.data?.steps)
+    ? (a.data!.steps as Array<{ type?: string; status?: string }>)
+    : [];
+  return steps.length > 0 && steps.every((s) => s.type === "run_agent" && s.status === "ok");
+}
+
+function presentActivitySummary(a: Activity): string {
+  const output =
+    a.data?.output && typeof a.data.output === "object" ? (a.data.output as Record<string, unknown>) : null;
+  const agentName = typeof a.data?.agentName === "string" ? a.data.agentName : "";
+  if ((agentName === "Website Enricher" || a.summary.startsWith("Website Enricher")) && output && output.enriched === false) {
+    const domain = typeof output.domain === "string" && output.domain && output.domain !== "skipped" ? output.domain : "this company";
+    const detail = typeof output.detail === "string" ? output.detail.replace(/^skipped:\s*/, "") : "there wasn't enough to use";
+    return `Couldn't enrich ${domain} — ${detail}. Thesis screening did not run.`;
+  }
+  if (a.summary === "Website Enricher skipped") {
+    return "Couldn't enrich this company. Thesis screening did not run.";
+  }
+  return a.summary;
+}
+
 function ActivityTypeBadge({ type }: { type: string }) {
   const label =
     type === "workflow.run"
       ? "workflow"
       : type === "agent_run.completed"
-        ? "agent"
-        : type === "note.added"
-          ? "note"
-          : type === "deal.stage_changed"
-            ? "stage"
-            : type.replace(/\./g, " ");
+        ? "result"
+        : type === "agent_run.failed"
+          ? "failed"
+          : type === "note.added"
+            ? "note"
+            : type === "company.created"
+              ? "created"
+              : type === "deal.stage_changed"
+                ? "stage"
+                : type.replace(/[._]/g, " ");
   const tone =
     type.startsWith("workflow") || type.startsWith("agent")
       ? "indigo"
@@ -996,7 +1077,10 @@ function CompanyThesisScreen({
     queryFn: () => api.get<{ items: Activity[] }>(`/activity?companyId=${companyId}&limit=30`),
   });
   const stamp = parseScreenTag(tags);
-  const screenActivity = (activityQ.data?.items ?? []).find(
+  const blocked = enrichOutcome(activityQ.data?.items ?? []) === "failed";
+  const screenActivity = blocked
+    ? undefined
+    : (activityQ.data?.items ?? []).find(
     (a) =>
       a.type === "agent_run.completed" &&
       a.data?.output &&
@@ -1007,14 +1091,28 @@ function CompanyThesisScreen({
     screenActivity?.data?.output && typeof screenActivity.data.output === "object"
       ? (screenActivity.data.output as Record<string, unknown>)
       : null;
-  const recommendation =
-    (typeof output?.recommendation === "string" ? output.recommendation : stamp?.recommendation) as
-      | ScreenRec
-      | undefined;
+  const recommendation = blocked
+    ? undefined
+    : ((typeof output?.recommendation === "string" ? output.recommendation : stamp?.recommendation) as
+        | ScreenRec
+        | undefined);
   const fitScore =
     typeof output?.fitScore === "number"
       ? output.fitScore
       : stamp?.fitScore ?? null;
+
+  if (blocked) {
+    return (
+      <div className="panel p-3.5">
+        <h2 className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-paper-800">
+          <IconBot width={13} height={13} /> Thesis screen
+        </h2>
+        <p className="text-[12.5px] leading-snug text-paper-600">
+          Didn't run. The website couldn't be enriched, so there was nothing to score.
+        </p>
+      </div>
+    );
+  }
 
   if (!recommendation && !activityQ.isLoading) return null;
 

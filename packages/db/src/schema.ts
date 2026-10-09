@@ -1254,7 +1254,7 @@ export const workflows = pgTable(
       .$type<
         Array<{
           field: string; // dot-path into the event snapshot, e.g. "deal.askAmount"
-          op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists";
+          op: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "exists" | "nexists";
           value?: unknown;
         }>
       >()

@@ -10,6 +10,7 @@ import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapCompany } from "../mappers.js";
 import { loadSyndicatePeople } from "./syndicate.js";
 import { logActivity } from "../activity.js";
+import { isPlaceholderCopy } from "../screenMaterial.js";
 import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
 import { resolvePipelineStage } from "./pipelines.js";
@@ -30,8 +31,8 @@ async function tryFastWebsiteEnrich(domain?: string | null): Promise<{ descripti
       html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
       "";
     const out: Record<string, string> = {};
-    if (desc) out.description = desc.slice(0, 800);
-    else if (title) out.description = title.slice(0, 400);
+    if (desc && !isPlaceholderCopy(desc)) out.description = desc.slice(0, 800);
+    else if (title && !isPlaceholderCopy(title)) out.description = title.slice(0, 400);
     // sector keyword heuristic (lightweight, no AI call before insert)
     const lower = (desc + " " + title).toLowerCase();
     if (/(inference|efficiency|developer|devtools|api|pipeline)/.test(lower)) out.sector = "Dev Tools";
@@ -251,41 +252,7 @@ export async function createCompany(
     });
 
     return row.id;
-  }).then(async (id) => {
-    const companyId = String(id);
-    const domain = input.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
-    if (domain) {
-      // Visible enrichment: queue the Website Enricher agent (customers see it in Agents)
-      // and also keep the raw job as a fallback if the agent isn't seeded yet.
-      void (async () => {
-        try {
-          const { agents } = await import("@copyr/db/schema.js");
-          const [agent] = await ctx.db
-            .select()
-            .from(agents)
-            .where(and(eq(agents.workspaceId, session.workspaceId), eq(agents.name, "Website Enricher")));
-          if (agent) {
-            const { queueAgentRun } = await import("./agents.js");
-            await queueAgentRun(
-              ctx,
-              { workspaceId: session.workspaceId, actor: { userId: null, source: "agent" } },
-              agent.id,
-              { companyId, dealId: companyId, trigger: "workflow" },
-            );
-            return;
-          }
-        } catch {}
-        // fallback: raw enrichment job / inline
-        void ctx.enqueue("enrich-company", { workspaceId: session.workspaceId, companyId }).catch(() => undefined);
-        if (!ctx.boss) {
-          void import("./enrichment.js")
-            .then((m) => m.enrichCompanyFromDomain(ctx, session.workspaceId, companyId))
-            .catch(() => undefined);
-        }
-      })().catch(() => undefined);
-    }
-    return getCompany(ctx, session, companyId);
-  });
+  }).then(async (id) => getCompany(ctx, session, String(id)));
 }
 
 export async function updateCompany(

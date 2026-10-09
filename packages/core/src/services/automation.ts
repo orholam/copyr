@@ -12,6 +12,7 @@ import type { RealtimeEvent, WorkflowDto, WorkflowRunDto, CreateWorkflowInput } 
 import { createWorkflowSchema, TRIGGER_EVENTS } from "@copyr/contracts";
 import { CoreError, type CoreContext, type Session } from "../context.js";
 import { logActivity } from "../activity.js";
+import { valuesEqual } from "../screenMaterial.js";
 import { toIso } from "../mappers.js";
 import { setFieldValues } from "./fields.js";
 import * as dealsSvc from "./deals.js";
@@ -192,10 +193,12 @@ function evaluateCondition(
   switch (cond.op) {
     case "exists":
       return actual !== undefined && actual !== null && actual !== "";
+    case "nexists":
+      return actual === undefined || actual === null || actual === "";
     case "eq":
-      return normalize(actual) === normalize(cond.value);
+      return valuesEqual(actual, cond.value);
     case "neq":
-      return normalize(actual) !== normalize(cond.value);
+      return !valuesEqual(actual, cond.value);
     case "contains": {
       if (Array.isArray(actual)) return actual.map(normalize).includes(normalize(cond.value));
       if (actual === null || actual === undefined) return false;
@@ -478,7 +481,7 @@ async function executeAction(
         }
 
         const { queueAgentRun } = await import("./agents.js");
-        const queued = await queueAgentRun(ctx, session, agentRow.id, {
+        await queueAgentRun(ctx, session, agentRow.id, {
           companyId: (getPath(snapshot, "company.id") as string) ?? undefined,
           dealId: (getPath(snapshot, "deal.id") as string) ?? undefined,
           trigger: "workflow",
@@ -488,7 +491,7 @@ async function executeAction(
           actionIndex: index,
           type: action.type,
           status: "ok",
-          detail: `dispatched "${agentRow.name}" (run ${queued.run.id.slice(0, 8)})`,
+          detail: `dispatched "${agentRow.name}"`,
           at,
         };
       }
@@ -504,6 +507,22 @@ async function executeAction(
       at,
     };
   }
+}
+
+function effectiveConditions(
+  workflowName: string,
+  conditions: Array<{ field: string; op: string; value?: unknown }>,
+): Array<{ field: string; op: string; value?: unknown }> {
+  if (workflowName === "Screen after enrichment" && !conditions.some((c) => c.field === "output.enriched")) {
+    return [...conditions, { field: "output.enriched", op: "eq", value: true }];
+  }
+  if (
+    workflowName === "Screen new companies" &&
+    !conditions.some((c) => c.field === "company.domain" && (c.op === "nexists" || c.op === "eq"))
+  ) {
+    return [...conditions, { field: "company.domain", op: "nexists" }];
+  }
+  return conditions;
 }
 
 function skipped(index: number, type: string, at: string, detail: string): StepResult {
@@ -565,24 +584,9 @@ export async function evaluateWorkflowsForEvent(
       continue;
     }
 
-    // debounce identical (workflow, entity) runs
-    const [recent] = await ctx.db
-      .select({ id: workflowRuns.id })
-      .from(workflowRuns)
-      .where(
-        and(
-          eq(workflowRuns.workflowId, wf.id),
-          eq(workflowRuns.triggerEvent, event.type),
-          gte(workflowRuns.createdAt, new Date(Date.now() - 2_000)),
-          event.entityId ? sql`${workflowRuns.entityId} = ${event.entityId}` : sql`true`,
-        ),
-      )
-      .limit(1);
-    if (recent) continue;
-
+    const conditions = effectiveConditions(wf.name, wf.conditions ?? []);
     const allConditionsMatch =
-      !wf.conditions?.length ||
-      wf.conditions.every((c) => evaluateCondition(snapshot, c));
+      !conditions.length || conditions.every((c) => evaluateCondition(snapshot, c));
     if (!allConditionsMatch) continue;
 
     // chain depth guard on the same entity
@@ -600,17 +604,39 @@ export async function evaluateWorkflowsForEvent(
       if (count >= MAX_RUNS_PER_ENTITY_PER_MINUTE) continue;
     }
 
-    const [run] = await ctx.db
-      .insert(workflowRuns)
-      .values({
-        workspaceId: event.workspaceId,
-        workflowId: wf.id,
-        triggerEvent: event.type,
-        entityType: event.entityType,
-        entityId: event.entityId,
-        status: "running",
-      })
-      .returning();
+    // Claim this (workflow, entity) before acting. Parallel deliveries of the
+    // same company.created event used to insert two runs and fan out twice.
+    const run = await ctx.db.transaction(async (tx) => {
+      if (event.entityId) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${wf.id}:${event.entityId}`}))`);
+      }
+      const [recent] = await tx
+        .select({ id: workflowRuns.id })
+        .from(workflowRuns)
+        .where(
+          and(
+            eq(workflowRuns.workflowId, wf.id),
+            eq(workflowRuns.triggerEvent, event.type),
+            gte(workflowRuns.createdAt, new Date(Date.now() - 15_000)),
+            event.entityId ? sql`${workflowRuns.entityId} = ${event.entityId}` : sql`true`,
+          ),
+        )
+        .limit(1);
+      if (recent) return null;
+      const [inserted] = await tx
+        .insert(workflowRuns)
+        .values({
+          workspaceId: event.workspaceId,
+          workflowId: wf.id,
+          triggerEvent: event.type,
+          entityType: event.entityType,
+          entityId: event.entityId,
+          status: "running",
+        })
+        .returning();
+      return inserted ?? null;
+    });
+    if (!run) continue;
 
     try {
       const session = automationSession(event.workspaceId, wf.createdByUserId);
@@ -628,24 +654,29 @@ export async function evaluateWorkflowsForEvent(
           completedAt: new Date(),
           error: failed ? steps.filter((s) => s.status === "error").map((s) => s.detail).join("; ") : null,
         })
-        .where(eq(workflowRuns.id, run!.id));
+        .where(eq(workflowRuns.id, run.id));
 
       await ctx.db
         .update(workflows)
         .set({ runCount: sql`${workflows.runCount} + 1`, lastRunAt: new Date() })
         .where(eq(workflows.id, wf.id));
 
-      await logActivity(ctx, ctx.db, {
-        workspaceId: event.workspaceId,
-        entityType: event.entityType as never,
-        entityId: event.entityId,
-        companyId: (getPath(snapshot, "company.id") as string) ?? null,
-        dealId: (getPath(snapshot, "deal.id") as string) ?? null,
-        type: "workflow.run",
-        summary: summarizeWorkflowRun(wf.name, steps, failed),
-        actor: "ai",
-        data: { __wf: true, workflowId: wf.id, workflowName: wf.name, steps },
-      });
+      // A workflow whose only job is to start an agent is machinery. The agent's
+      // own result is the sentence on the company timeline.
+      const dispatchOnly = steps.length > 0 && steps.every((s) => s.type === "run_agent" && s.status === "ok");
+      if (!dispatchOnly) {
+        await logActivity(ctx, ctx.db, {
+          workspaceId: event.workspaceId,
+          entityType: event.entityType as never,
+          entityId: event.entityId,
+          companyId: (getPath(snapshot, "company.id") as string) ?? null,
+          dealId: (getPath(snapshot, "deal.id") as string) ?? null,
+          type: "workflow.run",
+          summary: summarizeWorkflowRun(wf.name, steps, failed),
+          actor: "ai",
+          data: { __wf: true, workflowId: wf.id, workflowName: wf.name, steps },
+        });
+      }
       ran++;
     } catch (err) {
       await ctx.db
@@ -655,7 +686,7 @@ export async function evaluateWorkflowsForEvent(
           error: err instanceof Error ? err.message : String(err),
           completedAt: new Date(),
         })
-        .where(eq(workflowRuns.id, run!.id));
+        .where(eq(workflowRuns.id, run.id));
     }
   }
 

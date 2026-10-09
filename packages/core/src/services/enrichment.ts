@@ -2,6 +2,7 @@ import { eq, and } from "drizzle-orm";
 import { companies, customFields, fieldValues } from "@copyr/db/schema.js";
 import type { CoreContext, Session } from "../context.js";
 import { logActivity } from "../activity.js";
+import { isPlaceholderCopy } from "../screenMaterial.js";
 
 const ENRICH_TIMEOUT_MS = 8_000;
 const USER_AGENT = "VentureLabsBot/0.1 (+https://venturelabs.vercel.app)";
@@ -11,13 +12,13 @@ export async function enrichCompanyFromDomain(
   ctx: CoreContext,
   workspaceId: string,
   companyId: string,
-): Promise<{ enriched: boolean; detail?: string }> {
+): Promise<{ enriched: boolean; detail?: string; domain?: string | null }> {
   const [company] = await ctx.db
     .select()
     .from(companies)
     .where(and(eq(companies.id, companyId), eq(companies.workspaceId, workspaceId)));
   if (!company) return { enriched: false, detail: "company not found" };
-  if (!company.domain) return { enriched: false, detail: "no domain" };
+  if (!company.domain) return { enriched: false, detail: "no domain", domain: null };
 
   const candidates = [`https://${company.domain}`, `http://${company.domain}`];
   let html = "";
@@ -46,7 +47,9 @@ export async function enrichCompanyFromDomain(
       lastStatus = e instanceof Error ? e.message.slice(0, 80) : String(e).slice(0, 80);
     }
   }
-  if (!fetched || !html) return { enriched: false, detail: `fetch ${lastStatus ?? "failed"} — no html` };
+  if (!fetched || !html) {
+    return { enriched: false, detail: `fetch ${lastStatus ?? "failed"} — no html`, domain: company.domain };
+  }
   title = html.match(/<title[^>]*>([^<]{1,160})<\/title>/i)?.[1]?.trim() ?? "";
   desc =
     html.match(/<meta[^>]+name="description"[^>]+content="([^"]{1,400})"/i)?.[1] ??
@@ -57,8 +60,17 @@ export async function enrichCompanyFromDomain(
     if (p) desc = p.slice(0, 400);
   }
 
+  const preview = `${title}\n${desc}\n${html.slice(0, 1500)}`;
+  if (isPlaceholderCopy(preview)) {
+    return {
+      enriched: false,
+      detail: `${company.domain} is a placeholder page, not a company website`,
+      domain: company.domain,
+    };
+  }
+
   const textBlob = [title, desc, `Source: ${fetchedUrl ?? `https://${company.domain}`}`, `Domain: ${company.domain}`].filter(Boolean).join("\n\n");
-  if (!textBlob.trim()) return { enriched: false, detail: "no content" };
+  if (!textBlob.trim()) return { enriched: false, detail: "no content", domain: company.domain };
 
   let inferredSector: string | null = null;
   let inferredFields: Record<string, unknown> = {};
@@ -125,7 +137,7 @@ export async function enrichCompanyFromDomain(
     }
   }
 
-  if (!updated) return { enriched: false, detail: "nothing to fill" };
+  if (!updated) return { enriched: false, detail: "nothing to fill", domain: company.domain };
 
   await logActivity(ctx, ctx.db, {
     workspaceId,
@@ -139,5 +151,5 @@ export async function enrichCompanyFromDomain(
     data: { domain: company.domain, patchKeys: Object.keys(patch), inferredFields: Object.keys(inferredFields) },
   });
 
-  return { enriched: true, detail: `patched ${Object.keys(patch).join(",")}` };
+  return { enriched: true, detail: `patched ${Object.keys(patch).join(",") || "fields"}`, domain: company.domain };
 }

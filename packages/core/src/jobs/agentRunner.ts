@@ -12,6 +12,7 @@ import { logActivity } from "../activity.js";
 import { spendCredits } from "../credits.js";
 import { gatherCompanyContext } from "../services/agents.js";
 import { generateKeyBetween } from "../fractional.js";
+import { explainEnrichmentSkip, thesisSkipReason } from "../screenMaterial.js";
 
 /**
  * Executes a queued agent run end-to-end: gathers the company context
@@ -53,75 +54,93 @@ export async function executeAgentRun(
       steps.push({ step: "enrich_fetch", status: "running", at: now() });
       const { enrichCompanyFromDomain } = await import("../services/enrichment.js");
       const result = await enrichCompanyFromDomain(ctx, workspaceId, companyId);
-      output = { enriched: result.enriched, detail: result.detail ?? null, domain: result.enriched ? "ok" : "skipped" };
+      output = {
+        enriched: result.enriched,
+        detail: result.detail ?? null,
+        domain: result.domain ?? null,
+        screened: false,
+      };
+      const sentence = result.enriched
+        ? `Enriched ${result.domain ?? "the website"}${result.detail ? ` (${result.detail.replace(/^patched /, "")})` : ""}.`
+        : explainEnrichmentSkip(result.domain, result.detail);
       steps.push({
-        step: "enriched",
+        step: result.enriched ? "enriched" : "skipped",
         status: "ok",
-        detail: result.enriched ? String(result.detail ?? "enriched") : `skipped: ${result.detail ?? ""}`,
+        detail: sentence,
         at: now(),
       });
-      // Also leave a lightweight note so the run is visible in the company timeline
-      if (result.enriched) {
-        await ctx.db.insert(notes).values({
-          workspaceId,
-          companyId,
-          body: `**Website Enricher** — enriched from domain before screening (${String(result.detail ?? "")}).`.slice(0, 2000),
-          authorUserId: null,
-        });
-      }
+      await writeCompanyNote(ctx, workspaceId, companyId, sentence);
     } else if (agent.kind === "thesis_screen") {
-      steps.push({ step: "gather_context", status: "running", at: now() });
       if (!companyId) throw new Error("thesis_screen requires a company scope");
       const context = await gatherCompanyContext(ctx, workspaceId, companyId);
-
-      steps.push({ step: "score_thesis", status: "running", at: now() });
-      const score = await ctx.ai.scoreThesis({
-        agentName: agent.name,
-        instructions: agent.instructions,
-        mustHaveKeywords: agent.config?.mustHaveKeywords ?? [],
-        excludeKeywords: agent.config?.excludeKeywords ?? [],
-        companyName: context.companyName,
-        sector: context.sector,
-        roundStage: context.roundStage,
-        askAmount: context.askAmount,
-        sourceText: context.text,
+      const skip = thesisSkipReason({
+        domain: context.domain,
+        description: context.description,
+        documentChars: context.documentChars,
       });
-      output = score as unknown as Record<string, unknown>;
+      if (skip) {
+        output = { screened: false, silent: skip.silent, reason: skip.reason };
+        steps.push({ step: "skipped", status: "ok", detail: skip.reason, at: now() });
+        if (!skip.silent) await writeCompanyNote(ctx, workspaceId, companyId, skip.reason);
+      } else {
+        steps.push({ step: "gather_context", status: "running", at: now() });
 
-      await ctx.db.transaction(async (tx) => {
-        await spendCredits(ctx, tx as never, workspaceId, "agent_run", {
-          refType: "agent_run",
-          refId: run.id,
+        steps.push({ step: "score_thesis", status: "running", at: now() });
+        const score = await ctx.ai.scoreThesis({
+          agentName: agent.name,
+          instructions: agent.instructions,
+          mustHaveKeywords: agent.config?.mustHaveKeywords ?? [],
+          excludeKeywords: agent.config?.excludeKeywords ?? [],
+          companyName: context.companyName,
+          sector: context.sector,
+          roundStage: context.roundStage,
+          askAmount: context.askAmount,
+          sourceText: context.text,
         });
-      });
+        output = { ...(score as unknown as Record<string, unknown>), screened: true };
 
-      steps.push({
-        step: "scored",
-        status: "ok",
-        detail: `fit ${score.fitScore} → ${score.recommendation}`,
-        at: now(),
-      });
+        await ctx.db.transaction(async (tx) => {
+          await spendCredits(ctx, tx as never, workspaceId, "agent_run", {
+            refType: "agent_run",
+            refId: run.id,
+          });
+        });
 
-      // write a screening note on the company so the pipeline carries the result
-      const reasons = Array.isArray(score.reasons) ? score.reasons : [];
-      const concerns = Array.isArray(score.concerns) ? score.concerns : [];
-      const noteBody =
-        `**${agent.name}** — fit ${score.fitScore}/100 → ${String(score.recommendation ?? "watch").toUpperCase()}\n\n` +
-        `${score.summary ?? ""}\n` +
-        (reasons.length ? `\nReasons:\n${reasons.map((r) => `- ${r}`).join("\n")}` : "") +
-        (concerns.length ? `\nConcerns:\n${concerns.map((c) => `- ${c}`).join("\n")}` : "");
-      await ctx.db.insert(notes).values({
-        workspaceId,
-        companyId,
-        body: noteBody.slice(0, 4000),
-        authorUserId: null,
-      });
+        steps.push({
+          step: "scored",
+          status: "ok",
+          detail: `fit ${score.fitScore} → ${score.recommendation}`,
+          at: now(),
+        });
 
-      steps.push({ step: "screening_note_written", status: "ok", at: now() });
-    }
+        const reasons = Array.isArray(score.reasons) ? score.reasons : [];
+        const concerns = Array.isArray(score.concerns) ? score.concerns : [];
+        const noteBody =
+          `**${agent.name}** — fit ${score.fitScore}/100 → ${String(score.recommendation ?? "watch").toUpperCase()}\n\n` +
+          `${score.summary ?? ""}\n` +
+          (reasons.length ? `\nReasons:\n${reasons.map((r) => `- ${r}`).join("\n")}` : "") +
+          (concerns.length ? `\nConcerns:\n${concerns.map((c) => `- ${c}`).join("\n")}` : "");
+        await writeCompanyNote(ctx, workspaceId, companyId, noteBody.slice(0, 4000));
 
-    // ── diligence_checklist ──────────────────────────────────────────
-    else if (agent.kind === "diligence_checklist") {
+        const { upsertScreenTag } = await import("../screenTag.js");
+        const [companyRow] = await ctx.db
+          .select({ tags: companies.tags })
+          .from(companies)
+          .where(and(eq(companies.id, companyId), eq(companies.workspaceId, workspaceId)))
+          .limit(1);
+        if (companyRow) {
+          const rec = String(score.recommendation ?? "watch") as "advance" | "watch" | "pass";
+          await ctx.db
+            .update(companies)
+            .set({
+              tags: upsertScreenTag(companyRow.tags ?? [], rec, Number(score.fitScore) || 0),
+            })
+            .where(eq(companies.id, companyId));
+        }
+
+        steps.push({ step: "screening_note_written", status: "ok", at: now() });
+      }
+    } else if (agent.kind === "diligence_checklist") {
       const items = agent.config?.checklist?.length
         ? agent.config.checklist
         : [
@@ -328,6 +347,22 @@ export async function executeAgentRun(
           sourceText: context.text,
         });
         output = score as unknown as Record<string, unknown>;
+
+        const { upsertScreenTag } = await import("../screenTag.js");
+        const [companyRow] = await ctx.db
+          .select({ tags: companies.tags })
+          .from(companies)
+          .where(and(eq(companies.id, companyId), eq(companies.workspaceId, workspaceId)))
+          .limit(1);
+        if (companyRow) {
+          const rec = String(score.recommendation ?? "watch") as "advance" | "watch" | "pass";
+          await ctx.db
+            .update(companies)
+            .set({
+              tags: upsertScreenTag(companyRow.tags ?? [], rec, Number(score.fitScore) || 0),
+            })
+            .where(eq(companies.id, companyId));
+        }
       } else {
         output = {
           summary: `Agent "${agent.name}" has no company scope; provide companyId/dealId to execute.`,
@@ -368,23 +403,26 @@ export async function executeAgentRun(
         .where(and(eq(tasks.id, run.taskId), eq(tasks.workspaceId, workspaceId)));
     }
 
-    await logActivity(ctx, ctx.db, {
-      workspaceId,
-      entityType: "agent_run",
-      entityId: run.id,
-      companyId: run.companyId,
-      dealId: run.dealId,
-      type: "agent_run.completed",
-      summary: summarizeAgentCompletion(agent.name, agent.kind, output),
-      actor: "ai",
-      data: {
-        output,
-        agentName: agent.name,
-        agentKind: agent.kind,
-        spaceId: typeof output.spaceId === "string" ? output.spaceId : null,
-        taskCount: Array.isArray(output.createdTasks) ? output.createdTasks.length : null,
-      },
-    });
+    if (output.silent !== true) {
+      await logActivity(ctx, ctx.db, {
+        workspaceId,
+        entityType: "agent_run",
+        entityId: run.id,
+        companyId: run.companyId,
+        dealId: run.dealId,
+        type: "agent_run.completed",
+        summary: summarizeAgentCompletion(agent.name, agent.kind, output),
+        actor: "ai",
+        data: {
+          output,
+          agentName: agent.name,
+          agentKind: agent.kind,
+          silent: false,
+          spaceId: typeof output.spaceId === "string" ? output.spaceId : null,
+          taskCount: Array.isArray(output.createdTasks) ? output.createdTasks.length : null,
+        },
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await ctx.db
@@ -404,6 +442,8 @@ export async function executeAgentRun(
       workspaceId,
       entityType: "agent_run",
       entityId: run.id,
+      companyId: run.companyId,
+      dealId: run.dealId,
       type: "agent_run.failed",
       summary: `Agent run failed: ${message.slice(0, 140)}`,
       actor: "system",
@@ -465,6 +505,27 @@ function now(): string {
   return new Date().toISOString();
 }
 
+async function writeCompanyNote(
+  ctx: CoreContext,
+  workspaceId: string,
+  companyId: string,
+  body: string,
+): Promise<void> {
+  const text = body.slice(0, 4000);
+  const [dup] = await ctx.db
+    .select({ id: notes.id })
+    .from(notes)
+    .where(and(eq(notes.companyId, companyId), eq(notes.workspaceId, workspaceId), eq(notes.body, text)))
+    .limit(1);
+  if (dup) return;
+  await ctx.db.insert(notes).values({
+    workspaceId,
+    companyId,
+    body: text,
+    authorUserId: null,
+  });
+}
+
 async function resolveCompanyId(
   ctx: CoreContext,
   run: typeof agentRuns.$inferSelect,
@@ -497,13 +558,24 @@ function summarizeAgentCompletion(
   output: Record<string, unknown>,
 ): string {
   if (agentName === "Website Enricher") {
-    return output.enriched ? `${agentName} enriched website → ${String(output.detail ?? "ok")}` : `${agentName} skipped`;
+    if (output.enriched) {
+      const domain = typeof output.domain === "string" && output.domain ? output.domain : "the website";
+      const what = typeof output.detail === "string" ? output.detail.replace(/^patched /, "") : "";
+      return what ? `Enriched ${domain} (${what}).` : `Enriched ${domain}.`;
+    }
+    return explainEnrichmentSkip(
+      typeof output.domain === "string" ? output.domain : null,
+      typeof output.detail === "string" ? output.detail : null,
+    );
   }
   if (kind === "diligence_checklist") {
     const n = Array.isArray(output.createdTasks) ? output.createdTasks.length : 0;
     return `${agentName} created ${n} open diligence task${n === 1 ? "" : "s"}`;
   }
   if (kind === "thesis_screen") {
+    if (output.screened === false) {
+      return typeof output.reason === "string" ? output.reason : `${agentName} did not run`;
+    }
     const fit = output.fitScore;
     const rec = output.recommendation;
     if (fit != null && rec) return `${agentName} scored ${fit}/100 → ${String(rec)}`;
