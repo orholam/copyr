@@ -79,6 +79,7 @@ function formatToolLabel(name: string, args?: Record<string, unknown> | null): s
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"];
 const LAST_CONVERSATION_KEY = "copyr-assistant-conversation";
+const ALPHA_KEY = "copyr-assistant-alpha-dismissed";
 const CONVERSATION_STALE_MS = 5 * 60_000;
 
 function readLastConversation(): string | null {
@@ -114,6 +115,13 @@ export default function Assistant() {
     return fromUrl || readLastConversation();
   });
   const [draft, setDraft] = useState("");
+  const [alphaNote, setAlphaNote] = useState(() => {
+    try {
+      return localStorage.getItem(ALPHA_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
   const [showHistory, setShowHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [params, setParams] = useSearchParams();
@@ -391,7 +399,7 @@ export default function Assistant() {
             ))}
           </div>
           <p className="border-t border-paper-900/[0.07] px-3 py-2 text-[10.5px] leading-relaxed text-paper-600">
-            Every conversation is saved here — reviewable by the whole firm.
+            Only you can see these conversations.
           </p>
           </div>
         </aside>
@@ -409,6 +417,30 @@ export default function Assistant() {
       <section className="relative flex min-w-0 flex-1 flex-col">
         {/* ambient backdrop */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-brand-50/70 to-transparent" />
+        {alphaNote && (
+          <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pt-3 md:hidden">
+            <div className="rounded-xl border border-paper-900/[0.1] bg-white px-3.5 py-2.5 shadow-sm">
+              <p className="text-[12.5px] font-semibold text-paper-900">Alpha, not a finished harness</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-paper-600">
+                This assistant is v0.1. It can miss, invent an id, or stop halfway. Check what it does before you trust it.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setAlphaNote(false);
+                  try {
+                    localStorage.setItem(ALPHA_KEY, "1");
+                  } catch {
+                    /* private mode */
+                  }
+                }}
+                className="mt-2 text-[11px] font-semibold text-paper-800"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-8">

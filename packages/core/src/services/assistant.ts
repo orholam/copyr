@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { conversations, messages } from "@copyr/db/schema.js";
 import type { ConversationDto, MessageDto } from "@copyr/contracts";
 import { requiredArgNames, fillMissingToolArgs, missingRequiredArgs, type AssistantToolSpec } from "@copyr/ai";
@@ -11,8 +11,16 @@ import { toIso } from "../mappers.js";
  * The central Assistant: one chat surface over every product capability.
  * Each turn lets the provider request tool calls from a curated registry;
  * results are fed back until a final reply is produced. Every step is
- * persisted so threads are reviewable History.
+ * persisted so the author can reopen them. Threads are private to that person.
  */
+
+/** A chat belongs to the signed-in person. API actors only see threads with no user. */
+function ownConversations(session: Session) {
+  const mine = session.actor.userId
+    ? eq(conversations.userId, session.actor.userId)
+    : isNull(conversations.userId);
+  return and(eq(conversations.workspaceId, session.workspaceId), mine);
+}
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -346,7 +354,7 @@ export async function listConversations(
     })
     .from(conversations)
     .leftJoin(messages, eq(messages.conversationId, conversations.id))
-    .where(eq(conversations.workspaceId, session.workspaceId))
+    .where(ownConversations(session))
     .groupBy(conversations.id)
     .orderBy(desc(conversations.lastMessageAt))
     .limit(200);
@@ -361,7 +369,7 @@ export async function getConversation(
   const [row] = await ctx.db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.workspaceId, session.workspaceId)));
+    .where(and(eq(conversations.id, conversationId), ownConversations(session)));
   if (!row) throw new CoreError("conversation not found", { status: 404 });
 
   const msgRows = await ctx.db
@@ -383,7 +391,7 @@ export async function deleteConversation(
 ): Promise<void> {
   const deleted = await ctx.db
     .delete(conversations)
-    .where(and(eq(conversations.id, conversationId), eq(conversations.workspaceId, session.workspaceId)))
+    .where(and(eq(conversations.id, conversationId), ownConversations(session)))
     .returning({ id: conversations.id });
   if (!deleted.length) throw new CoreError("conversation not found", { status: 404 });
 }
@@ -423,7 +431,7 @@ async function runTurn(
   const [conv] = await ctx.db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, convId), eq(conversations.workspaceId, session.workspaceId)));
+    .where(and(eq(conversations.id, convId), ownConversations(session)));
   if (!conv) throw new CoreError("conversation not found", { status: 404 });
 
   const [{ maxPos }] = await ctx.db

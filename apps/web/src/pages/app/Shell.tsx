@@ -278,6 +278,11 @@ export default function AppShell() {
                           }
                         />
                         <span className="truncate">{item.label}</span>
+                        {item.label === "Assistant" && (
+                          <span className="ml-auto rounded-full border border-paper-900/[0.12] px-1.5 text-[9px] font-semibold tracking-wide text-paper-400">
+                            v0.1
+                          </span>
+                        )}
                         {item.label === "Inbox" && <InboxBadge />}
                       </>
                     )}
@@ -357,12 +362,7 @@ export default function AppShell() {
           </button>
           <div className="flex-1" />
           <ThemeToggle dark={dark} onToggle={toggle} />
-          {isAssistantRoute && (
-            <span className="hidden items-center gap-1.5 text-xs text-paper-500 md:flex">
-              <IconSpark width={11} height={11} className="text-brand-600" />
-              Assistant
-            </span>
-          )}
+          {isAssistantRoute && <AssistantAlpha />}
           <span className="hidden items-center gap-1.5 text-xs text-paper-500 md:flex">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
             Live
@@ -583,6 +583,56 @@ function OrgSwitcher({
         </div>
       )}
     </div>
+  );
+}
+
+const ALPHA_KEY = "copyr-assistant-alpha-dismissed";
+
+function AssistantAlpha() {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(ALPHA_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismiss = () => {
+    setOpen(false);
+    try {
+      localStorage.setItem(ALPHA_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+  };
+  return (
+    <span className="relative hidden items-center md:flex">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-paper-500"
+      >
+        <IconSpark width={11} height={11} className="text-brand-600" />
+        Assistant
+        <span className="rounded-full border border-paper-900/[0.14] px-1.5 py-px text-[10px] font-semibold tracking-wide text-paper-400">
+          v0.1
+        </span>
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          className="absolute right-0 top-[calc(100%+8px)] z-30 w-72 rounded-lg border border-paper-900/[0.1] bg-paper-50 p-3 text-left shadow-pop"
+        >
+          <p className="text-[12.5px] font-semibold text-paper-900">Alpha, not a finished harness</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-paper-600">
+            This assistant is v0.1. It can miss, invent an id, or stop halfway. Check what it does before you trust it.
+          </p>
+          <button type="button" onClick={dismiss} className="mt-2 text-[11px] font-semibold text-paper-800 hover:text-paper-950">
+            Got it
+          </button>
+        </div>
+      )}
+    </span>
   );
 }
 

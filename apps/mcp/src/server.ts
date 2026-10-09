@@ -49,24 +49,35 @@ function entityId(args: { dealId?: string; companyId?: string }): string {
   return id;
 }
 
-/** Resolve a company the caller named. A real id wins; anything else is a name. */
+/** Resolve a company the caller named. An id is used only when that company exists. */
 async function companyIdFrom(
   core: Core,
   args: { companyId?: string; dealId?: string; companyName?: string; name?: string },
 ): Promise<string | undefined> {
-  if (isUuid(args.companyId)) return args.companyId.trim();
-  if (isUuid(args.dealId)) return args.dealId.trim();
-  const name = (args.companyName ?? args.name ?? (!isUuid(args.companyId) ? args.companyId : undefined))?.trim();
-  if (!name) return undefined;
-  const match = await core.companies.findCompanyMatch(
-    core.ctx,
-    core.ctx.db,
-    requireSession().workspaceId,
-    name,
-    null,
-  );
+  const session = requireSession();
+  const named = (args.companyName ?? args.name ?? (!isUuid(args.companyId) ? args.companyId : undefined))?.trim();
+  const candidate = isUuid(args.companyId)
+    ? args.companyId.trim()
+    : isUuid(args.dealId)
+      ? args.dealId.trim()
+      : undefined;
+  if (candidate) {
+    try {
+      const row = await core.companies.getCompanyRow(core.ctx, core.ctx.db, session.workspaceId, candidate);
+      return row.id;
+    } catch {
+      /* invented or stale id — fall through to the name */
+    }
+  }
+  if (!named) {
+    if (candidate) {
+      throw new Error("That company id is not in this workspace. Pass companyName as the user said it. Do not invent an id.");
+    }
+    return undefined;
+  }
+  const match = await core.companies.findCompanyMatch(core.ctx, core.ctx.db, session.workspaceId, named, null);
   if (!match) {
-    throw new Error(`No company named "${name}". search_companies lists who is in the pipeline.`);
+    throw new Error(`No company named "${named}". search_companies lists who is in the pipeline.`);
   }
   return match.id;
 }
@@ -87,6 +98,15 @@ async function agentIdFrom(core: Core, args: { agentId?: string; agentName?: str
   return hit.id;
 }
 
+/** Drizzle dumps the whole SQL statement into Error.message. The cause is the useful line. */
+function shortToolError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err).slice(0, 300);
+  const cause = (err as { cause?: unknown }).cause;
+  const causeMsg = cause instanceof Error ? cause.message : "";
+  const msg = err.message.startsWith("Failed query:") && causeMsg ? causeMsg : err.message;
+  return msg.split("\n")[0].slice(0, 300);
+}
+
 /** Wrap handlers so tool errors become readable tool results, never crashes. */
 function tool<A>(fn: (args: A) => Promise<unknown>) {
   return async (args: A): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> => {
@@ -95,7 +115,7 @@ function tool<A>(fn: (args: A) => Promise<unknown>) {
       return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
     } catch (err) {
       return {
-        content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        content: [{ type: "text", text: `Error: ${shortToolError(err)}` }],
         isError: true,
       };
     }
@@ -1097,7 +1117,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
       const companyId = await companyIdFrom(core, args);
       const input = runAgentSchema.parse({
         companyId,
-        dealId: args.dealId ?? companyId,
+        dealId: isUuid(args.dealId) ? args.dealId : companyId,
         spaceId: args.spaceId,
         taskId: args.taskId,
         trigger: "manual",
@@ -1288,7 +1308,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "list_conversations",
-    "Assistant chat thread history (reviewable History surface)",
+    "Your assistant threads. Other people in the workspace cannot read them.",
     {},
     tool(async () => core.assistant.listConversations(core.ctx, requireSession())),
   );

@@ -8,7 +8,7 @@ const uuid = z.string().uuid();
 const routes: FastifyPluginAsync = async (app) => {
   const core = () => (app as unknown as { core: import("@copyr/core").Core }).core;
 
-  /** Thread history — every chat is reviewable. */
+  /** Thread history — only the author's chats. */
   app.get("/assistant/conversations", async (req) =>
     core().assistant.listConversations(core().ctx, req.session!),
   );
