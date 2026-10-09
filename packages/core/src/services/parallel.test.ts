@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseParallelProfile } from "./parallel.js";
+import { parallelRunStillActive, parseParallelProfile, readParallelError } from "./parallel.js";
 
 describe("parseParallelProfile", () => {
   it("keeps a researched company profile", () => {
@@ -28,6 +28,16 @@ describe("parseParallelProfile", () => {
       linkedinUrl: "https://linkedin.com/company/grid",
       founders: [{ name: "Ada Lovelace", title: "CEO" }],
     });
+  });
+
+  it("reads a still-active run out of Parallel's nested error", () => {
+    const body = {
+      type: "error",
+      error: { ref_id: "abc", message: "Run still active.", detail: null },
+    };
+    const message = readParallelError(body, JSON.stringify(body));
+    expect(message).toBe("Run still active.");
+    expect(parallelRunStillActive(408, message)).toBe(true);
   });
 
   it("drops unknown or nonsense numbers", () => {

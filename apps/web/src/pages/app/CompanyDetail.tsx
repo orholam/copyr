@@ -1304,6 +1304,7 @@ function humanizeEnrichDetail(detail: string): string {
   if (d === "no domain") return "no website is on file";
   if (d === "nothing to fill") return "";
   if (d.startsWith("fetch")) return "the website didn't respond";
+  if (d.startsWith("Parallel") || /still active/i.test(d)) return "company research didn't finish";
   return d;
 }
 

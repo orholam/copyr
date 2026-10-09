@@ -210,21 +210,54 @@ export async function researchCompany(input: {
     return { error: err instanceof Error ? err.message : "Parallel request failed" };
   }
 
-  try {
-    const result = await parallelFetch(apiKey, `${PARALLEL_API}/${runId}/result?timeout=90`, {
-      method: "GET",
-      timeoutMs: 100_000,
-    });
-    const output = result.output;
-    const content =
-      output && typeof output === "object" && "content" in output
-        ? (output as { content?: unknown }).content
-        : output;
-    const profile = parseParallelProfile(content);
-    if (!profile) return { error: "Parallel returned no company profile" };
-    return { profile };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Parallel result failed" };
+  // A 408 here means the run is still going, not that research failed.
+  const deadline = Date.now() + 3 * 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const result = await parallelFetch(apiKey, `${PARALLEL_API}/${runId}/result?timeout=45`, {
+        method: "GET",
+        timeoutMs: 55_000,
+      });
+      const output = result.output;
+      const content =
+        output && typeof output === "object" && "content" in output
+          ? (output as { content?: unknown }).content
+          : output;
+      const profile = parseParallelProfile(content);
+      if (!profile) return { error: "Parallel returned no company profile" };
+      return { profile };
+    } catch (err) {
+      if (err instanceof ParallelStillActive) {
+        await sleep(2_000);
+        continue;
+      }
+      return { error: err instanceof Error ? err.message : "Parallel result failed" };
+    }
+  }
+  return { error: "Parallel is still researching" };
+}
+
+/** Parallel nests the useful line under error.message. The body itself is not a message. */
+export function readParallelError(body: Record<string, unknown>, fallback: string): string {
+  const nested = body.error;
+  if (nested && typeof nested === "object" && typeof (nested as { message?: unknown }).message === "string") {
+    return (nested as { message: string }).message.trim();
+  }
+  if (typeof body.message === "string" && body.message.trim()) return body.message.trim();
+  return fallback.trim().slice(0, 180);
+}
+
+export function parallelRunStillActive(status: number, message: string): boolean {
+  return status === 408 || /still active/i.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+class ParallelStillActive extends Error {
+  constructor() {
+    super("Parallel is still researching");
   }
 }
 
@@ -252,7 +285,8 @@ async function parallelFetch(
     body = {};
   }
   if (!res.ok) {
-    const message = typeof body.message === "string" ? body.message : text.slice(0, 180);
+    const message = readParallelError(body, text);
+    if (parallelRunStillActive(res.status, message)) throw new ParallelStillActive();
     throw new Error(`Parallel ${res.status}${message ? `: ${message}` : ""}`);
   }
   return body;

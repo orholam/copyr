@@ -294,6 +294,29 @@ function toolDisplayArgs(args: Record<string, unknown>, resultText: string): Rec
   return shown;
 }
 
+/** A queued agent does not report back into the chat. Say where the result lands. */
+export function queuedAgentReply(runs: Array<{ agentName?: string | null; companyName?: string | null; alreadyQueued?: boolean }>): string {
+  return runs
+    .map((run) => {
+      const agent = run.agentName?.trim() || "The agent";
+      const company = run.companyName?.trim() || "that company";
+      const state = run.alreadyQueued ? "is already running" : "is queued";
+      return `**${agent}** ${state} for **${company}**. The result shows up on the company timeline.`;
+    })
+    .join("\n\n");
+}
+
+function queuedFromToolResult(name: string, ok: boolean, resultText: string): { agentName?: string; companyName?: string; alreadyQueued?: boolean } | null {
+  if (!ok || name !== "run_agent") return null;
+  try {
+    const parsed = JSON.parse(resultText) as { ok?: boolean; agentName?: string; companyName?: string; alreadyQueued?: boolean };
+    if (!parsed.ok) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function toolLabel(name: string, args: Record<string, unknown>): string {
   const title = TOOL_TITLES[name] ?? name.replaceAll("_", " ");
   const bits = Object.values(args)
@@ -499,6 +522,7 @@ async function runTurn(
   let finalReply: string | null = null;
   let creditsUsed = 0;
   const seenThisTurn = new Set<string>();
+  const queuedRuns: Array<{ agentName?: string; companyName?: string; alreadyQueued?: boolean }> = [];
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
@@ -553,6 +577,8 @@ async function runTurn(
               : {}),
           }).slice(0, 2_000);
         }
+        const queued = queuedFromToolResult(call.name, ok, resultText);
+        if (queued) queuedRuns.push(queued);
         const shown = toolDisplayArgs(args, resultText);
         emit?.({ type: "tool_end", name: call.name, ok, ms: Date.now() - t0, label: toolLabel(call.name, shown) });
         await insertMessage("tool", resultText, { name: call.name, args: shown, ok });
@@ -568,12 +594,14 @@ async function runTurn(
     break;
   }
 
-  if (finalReply === null) {
+  if (queuedRuns.length) {
+    finalReply = queuedAgentReply(queuedRuns);
+  } else if (finalReply === null) {
     history.push({
       role: "user",
       content:
         `Reply now, and only to this request: ${JSON.stringify(content)}. ` +
-        "If an agent was queued, name the agent and the company in one or two sentences and stop. " +
+        "Do not promise to update, notify, or check back later. " +
         "Do not repeat an earlier list of companies. Do not call tools.",
     });
     const closing = await ctx.ai.assistantTurn({ messages: history, tools: [], agentsCatalog });
