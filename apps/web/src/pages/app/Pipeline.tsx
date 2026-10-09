@@ -90,6 +90,62 @@ function compareDeals(a: Deal, b: Deal, stageIndex: Map<string, number>): number
   return 0;
 }
 
+type SortKey = "company" | "round" | "ask" | "syndicate" | "votes" | "submitted" | "stage" | "source" | "updated";
+
+const nameSort = [
+  { dir: "asc", label: "A → Z" },
+  { dir: "desc", label: "Z → A" },
+] as const;
+const amountSort = [
+  { dir: "asc", label: "Low → high" },
+  { dir: "desc", label: "High → low" },
+] as const;
+const stageSort = [
+  { dir: "asc", label: "Pipeline order" },
+  { dir: "desc", label: "Reverse" },
+] as const;
+const updatedSort = [
+  { dir: "desc", label: "Newest" },
+  { dir: "asc", label: "Oldest" },
+] as const;
+
+const SOURCE_LABEL: Record<string, string> = {
+  email: "Email",
+  upload: "Upload",
+  link: "Link",
+  form: "Form",
+  manual: "Manual",
+  agent: "Agent",
+};
+
+function textOf(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function sortBlank(deal: Deal, key: SortKey): boolean {
+  if (key === "ask") return deal.askAmount == null;
+  if (key === "round") return !textOf(deal.roundLabel || deal.roundStage);
+  if (key === "submitted") return !deal.submittedBy?.name;
+  if (key === "syndicate") return !deal.syndicateStatus && !deal.firmInvested;
+  return false;
+}
+
+/** Ascending comparison for populated values. */
+function compareSort(a: Deal, b: Deal, key: SortKey, stageIndex: Map<string, number>): number {
+  const text = (left: string, right: string) =>
+    left.localeCompare(right, undefined, { sensitivity: "base", numeric: true });
+  if (key === "company") return text(a.company.name, b.company.name);
+  if (key === "round") return text(textOf(a.roundLabel || a.roundStage), textOf(b.roundLabel || b.roundStage));
+  if (key === "ask") return (a.askAmount ?? 0) - (b.askAmount ?? 0);
+  if (key === "votes") return (a.upvoters?.length ?? 0) - (b.upvoters?.length ?? 0);
+  if (key === "submitted") return text(textOf(a.submittedBy?.name), textOf(b.submittedBy?.name));
+  if (key === "stage") return (stageIndex.get(a.stageId) ?? Number.MAX_SAFE_INTEGER) - (stageIndex.get(b.stageId) ?? Number.MAX_SAFE_INTEGER);
+  if (key === "source") return text(SOURCE_LABEL[a.source] ?? a.source, SOURCE_LABEL[b.source] ?? b.source);
+  if (key === "updated") return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+  const rank = (d: Deal) => (d.syndicateStatus === "queued" ? "In queue" : d.syndicateStatus === "presented" ? "Presented" : "Invested");
+  return text(rank(a), rank(b));
+}
+
 /** Server orders deals by stage position, then deal position — splice to match. */
 function reorderDeals(
   items: Deal[],
@@ -304,6 +360,10 @@ export default function Pipeline() {
 
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [syndicate, setSyndicate] = useState<"all" | "queued" | "presented" | "invested">("all");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [submitterFilter, setSubmitterFilter] = useState<string | null>(null);
   const dealsKey = ["deals", q, tagFilter] as const;
   const dealsQ = useQuery({
     queryKey: dealsKey,
@@ -488,6 +548,39 @@ export default function Pipeline() {
     return items;
   }, [dealsQ.data, pendingMoves, syndicate, stageIndex]);
 
+  const tableDeals = useMemo(() => {
+    let items = boardDeals;
+    if (stageFilter) items = items.filter((d) => d.stageId === stageFilter);
+    if (sourceFilter) items = items.filter((d) => d.source === sourceFilter);
+    if (submitterFilter) items = items.filter((d) => d.submittedBy?.id === submitterFilter);
+    if (!sort) return items;
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const aBlank = sortBlank(a, sort.key);
+      const bBlank = sortBlank(b, sort.key);
+      if (aBlank || bBlank) {
+        if (aBlank !== bBlank) return aBlank ? 1 : -1;
+        return compareDeals(a, b, stageIndex);
+      }
+      const c = compareSort(a, b, sort.key, stageIndex);
+      return c === 0 ? compareDeals(a, b, stageIndex) : c * sign;
+    });
+  }, [boardDeals, sort, sourceFilter, stageFilter, stageIndex, submitterFilter]);
+
+  const sourceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const d of dealsQ.data?.items ?? []) seen.add(d.source);
+    return [...seen].sort((a, b) => (SOURCE_LABEL[a] ?? a).localeCompare(SOURCE_LABEL[b] ?? b));
+  }, [dealsQ.data]);
+
+  const submitterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of dealsQ.data?.items ?? []) {
+      if (d.submittedBy) map.set(d.submittedBy.id, d.submittedBy.name);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }));
+  }, [dealsQ.data]);
+
   const byStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
     for (const s of pipeline?.stages ?? []) map.set(s.id, []);
@@ -667,20 +760,89 @@ export default function Pipeline() {
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="sticky top-0 z-10 bg-paper-100/95 text-[11px] font-bold uppercase tracking-[0.08em] text-paper-500 backdrop-blur">
-                <Th>Company</Th>
-                <Th>Round</Th>
-                <Th>Ask</Th>
-                <Th>Syndicate</Th>
-                <Th className="hidden md:table-cell">Votes</Th>
-                <Th className="hidden lg:table-cell">Submitted by</Th>
-                <Th>Stage</Th>
-                <Th className="hidden sm:table-cell">Source</Th>
-                <Th>Updated</Th>
+                <ColumnHeader label="Company" sortKey="company" sort={sort} onSort={setSort} options={nameSort} />
+                <ColumnHeader label="Round" sortKey="round" sort={sort} onSort={setSort} options={nameSort} />
+                <ColumnHeader label="Ask" sortKey="ask" sort={sort} onSort={setSort} options={amountSort} />
+                <ColumnHeader
+                  label="Syndicate"
+                  sortKey="syndicate"
+                  sort={sort}
+                  onSort={setSort}
+                  options={nameSort}
+                  filter={{
+                    value: syndicate === "all" ? null : syndicate,
+                    onChange: (value) => setSyndicate(value === "queued" || value === "presented" || value === "invested" ? value : "all"),
+                    options: [
+                      { value: "queued", label: "In queue" },
+                      { value: "presented", label: "Presented" },
+                      { value: "invested", label: "Firm invested" },
+                    ],
+                  }}
+                />
+                <ColumnHeader label="Votes" className="hidden md:table-cell" sortKey="votes" sort={sort} onSort={setSort} options={amountSort} />
+                <ColumnHeader
+                  label="Submitted by"
+                  className="hidden lg:table-cell"
+                  sortKey="submitted"
+                  sort={sort}
+                  onSort={setSort}
+                  options={nameSort}
+                  filter={{
+                    value: submitterFilter,
+                    onChange: setSubmitterFilter,
+                    options: submitterOptions.map(([id, name]) => ({ value: id, label: name })),
+                  }}
+                />
+                <ColumnHeader
+                  label="Stage"
+                  sortKey="stage"
+                  sort={sort}
+                  onSort={setSort}
+                  options={stageSort}
+                  filter={{
+                    value: stageFilter,
+                    onChange: setStageFilter,
+                    options: (pipeline?.stages ?? []).map((s) => ({ value: s.id, label: s.name, color: s.color })),
+                  }}
+                />
+                <ColumnHeader
+                  label="Source"
+                  className="hidden sm:table-cell"
+                  sortKey="source"
+                  sort={sort}
+                  onSort={setSort}
+                  options={nameSort}
+                  filter={{
+                    value: sourceFilter,
+                    onChange: setSourceFilter,
+                    options: sourceOptions.map((source) => ({ value: source, label: SOURCE_LABEL[source] ?? source })),
+                  }}
+                />
+                <ColumnHeader label="Updated" sortKey="updated" sort={sort} onSort={setSort} options={updatedSort} />
                 <Th><span className="sr-only">Delete</span></Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-paper-900/[0.05]">
-              {boardDeals.map((deal) => {
+              {tableDeals.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-16 text-center font-serif text-[13px] italic text-paper-400">
+                    Nothing matches.
+                    <button
+                      type="button"
+                      className="ml-2 not-italic font-sans text-[12px] font-semibold text-paper-600 hover:text-paper-900"
+                      onClick={() => {
+                        setSyndicate("all");
+                        setStageFilter(null);
+                        setSourceFilter(null);
+                        setSubmitterFilter(null);
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {tableDeals.map((deal) => {
                 const stage = pipeline?.stages.find((s) => s.id === deal.stageId);
                 return (
                   <tr
@@ -905,9 +1067,11 @@ function QuietText({
 
 function QuietMenu({
   label,
+  buttonClassName,
   children,
 }: {
   label: ReactNode;
+  buttonClassName?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -965,7 +1129,10 @@ function QuietMenu({
           if (r) setPos({ top: r.bottom + 6, left: r.left });
           setOpen((v) => !v);
         }}
-        className="rounded-md px-1 py-0.5 -mx-1 text-left outline-none transition-colors hover:bg-paper-900/[0.045] focus-visible:bg-paper-900/[0.045]"
+        className={
+          buttonClassName ??
+          "rounded-md px-1 py-0.5 -mx-1 text-left outline-none transition-colors hover:bg-paper-900/[0.045] focus-visible:bg-paper-900/[0.045]"
+        }
       >
         {label}
       </button>
@@ -1114,9 +1281,104 @@ function StageCell({
   );
 }
 
-function Th({ children, className }: { children?: ReactNode; className?: string }) {
+function ColumnHeader({
+  label,
+  className,
+  sortKey,
+  sort,
+  onSort,
+  options,
+  filter,
+}: {
+  label: string;
+  className?: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: "asc" | "desc" } | null;
+  onSort: (next: { key: SortKey; dir: "asc" | "desc" } | null) => void;
+  options: readonly { dir: "asc" | "desc"; label: string }[];
+  filter?: {
+    value: string | null;
+    onChange: (value: string | null) => void;
+    options: { value: string; label: string; color?: string }[];
+  };
+}) {
+  const sorting = sort?.key === sortKey;
+  const filtering = !!filter?.value;
   return (
-    <th className={cx("whitespace-nowrap px-3 py-2.5", className)}>
+    <Th className={className} ariaSort={sorting ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <QuietMenu
+        buttonClassName={cx(
+          "inline-flex max-w-full items-center gap-1 text-left text-inherit outline-none transition-colors hover:text-paper-800",
+          (sorting || filtering) && "text-paper-800",
+        )}
+        label={
+          <>
+            <span>{label}</span>
+            {sorting && (
+              <span aria-hidden className="text-[10px] leading-none tracking-normal">
+                {sort.dir === "asc" ? "↑" : "↓"}
+              </span>
+            )}
+            {filtering && <span aria-hidden className="h-1 w-1 shrink-0 rounded-full bg-current" />}
+          </>
+        }
+      >
+        {(close) => (
+          <>
+            {options.map((option) => (
+              <MenuRow
+                key={option.dir}
+                active={sorting && sort.dir === option.dir}
+                onClick={() => {
+                  onSort(sorting && sort.dir === option.dir ? null : { key: sortKey, dir: option.dir });
+                  close();
+                }}
+              >
+                {option.label}
+              </MenuRow>
+            ))}
+            {filter && filter.options.length > 0 && (
+              <>
+                <MenuRow
+                  active={!filter.value}
+                  onClick={() => {
+                    filter.onChange(null);
+                    close();
+                  }}
+                >
+                  All
+                </MenuRow>
+                {filter.options.map((option) => (
+                  <MenuRow
+                    key={option.value}
+                    active={filter.value === option.value}
+                    onClick={() => {
+                      filter.onChange(filter.value === option.value ? null : option.value);
+                      close();
+                    }}
+                  >
+                    {option.color ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ background: option.color }} />
+                        {option.label}
+                      </span>
+                    ) : (
+                      option.label
+                    )}
+                  </MenuRow>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </QuietMenu>
+    </Th>
+  );
+}
+
+function Th({ children, className, ariaSort }: { children?: ReactNode; className?: string; ariaSort?: "ascending" | "descending" | "none" }) {
+  return (
+    <th aria-sort={ariaSort} className={cx("whitespace-nowrap px-3 py-2.5", className)}>
       {children}
     </th>
   );
