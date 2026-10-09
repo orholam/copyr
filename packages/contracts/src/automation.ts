@@ -12,6 +12,7 @@ export const conditionOpSchema = z.enum([
   "lte",
   "contains",
   "exists",
+  "nexists",
 ]);
 
 export const workflowConditionSchema = z.object({
