@@ -25,7 +25,7 @@ function bearerToken(header: string | string[] | undefined): string | null {
 }
 
 // Web-only commits are skipped. This file is inside the project Vercel builds,
-// so touching it publishes the SPA (assignee menu).
+// so touching it publishes the SPA (new chat starts on the first click).
 export async function buildApp(opts: { core?: Core } = {}) {
   const config = loadConfig();
   const core = opts.core ?? (await createCore({ runWorkers: process.env.API_RUN_WORKERS !== "false" }));

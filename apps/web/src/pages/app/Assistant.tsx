@@ -124,13 +124,22 @@ export default function Assistant() {
   });
   const [showHistory, setShowHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const skipUrlSync = useRef(true);
   const [params, setParams] = useSearchParams();
   const cParam = params.get("c");
 
-  /** Deep link: /app?c=<id> opens a saved conversation. */
+  // Follow the address bar only when it changes. Depending on activeId made
+  // New chat clear the thread, then this effect reopen it from the old ?c=
+  // before the URL update landed — so the first click did nothing.
+  // The first run is skipped so a restored session conversation is not cleared
+  // when the URL has no ?c=.
   useEffect(() => {
-    if (cParam && cParam !== activeId) setActiveId(cParam);
-  }, [cParam, activeId]);
+    if (skipUrlSync.current) {
+      skipUrlSync.current = false;
+      return;
+    }
+    setActiveId(cParam);
+  }, [cParam]);
 
   const setCParam = (id: string | null) => {
     const next = new URLSearchParams(params);
