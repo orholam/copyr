@@ -666,7 +666,7 @@ export default function Pipeline() {
         <div ref={listRef} key="table" className="animate-fade-in min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full text-left text-[13px]">
             <thead>
-              <tr className="sticky top-0 z-10 border-b border-paper-900/[0.1] bg-paper-100/95 text-[11px] font-bold uppercase tracking-[0.08em] text-paper-500 backdrop-blur">
+              <tr className="sticky top-0 z-10 bg-paper-100/95 text-[11px] font-bold uppercase tracking-[0.08em] text-paper-500 backdrop-blur">
                 <Th>Company</Th>
                 <Th>Round</Th>
                 <Th>Ask</Th>
