@@ -1102,7 +1102,29 @@ export function createCopyrMcpServer(core: Core): McpServer {
         taskId: args.taskId,
         trigger: "manual",
       });
-      return core.agents.queueAgentRun(core.ctx, requireSession(), agentId, input);
+      const queued = await core.agents.queueAgentRun(core.ctx, requireSession(), agentId, input);
+      let companyName: string | null = null;
+      if (companyId) {
+        try {
+          const row = await core.companies.getCompanyRow(
+            core.ctx,
+            core.ctx.db,
+            requireSession().workspaceId,
+            companyId,
+          );
+          companyName = row.name;
+        } catch {
+          companyName = null;
+        }
+      }
+      return {
+        ok: true,
+        alreadyQueued: queued.alreadyQueued === true,
+        agentName: queued.run.agentName ?? null,
+        companyName,
+        status: queued.run.status,
+        runId: queued.run.id,
+      };
     }),
   );
 

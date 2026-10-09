@@ -10,6 +10,7 @@ export async function enrichCompanyFromDomain(
   ctx: CoreContext,
   workspaceId: string,
   companyId: string,
+  opts: { announce?: boolean } = {},
 ): Promise<{ enriched: boolean; detail?: string; domain?: string | null }> {
   const [company] = await ctx.db
     .select()
@@ -98,7 +99,7 @@ export async function enrichCompanyFromDomain(
 
   if (!updated) return { enriched: false, detail: "nothing to fill", domain: company.domain };
 
-  await logActivity(ctx, ctx.db, {
+  if (opts.announce !== false) await logActivity(ctx, ctx.db, {
     workspaceId,
     entityType: "company",
     entityId: companyId,

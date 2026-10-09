@@ -217,16 +217,13 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
     name: "Promote advancing screens",
     description: "When Thesis Screener says advance, stamp High conviction, move to Initial Review, and brief the team.",
     triggerEvent: "agent_run.completed",
-    conditions: [{ field: "output.recommendation", op: "eq", value: "advance" }],
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Thesis Screener" },
+      { field: "output.recommendation", op: "eq", value: "advance" },
+    ],
     actions: [
       { type: "set_deal_fields", config: { fields: { conviction: "High" } } },
       { type: "move_deal", config: { stageName: "Initial Review" } },
-      {
-        type: "add_note",
-        config: {
-          body: "{{agent.name}} scored {{output.fitScore}}/100 (advance) on {{company.name}} — flagged for partner attention.",
-        },
-      },
     ],
     isEnabled: true,
   },
@@ -234,16 +231,11 @@ export const DEFAULT_WORKFLOW_SPECS: Array<{
     name: "File pass recommendations",
     description: "When Thesis Screener says pass, move the deal to Passed and leave a short rationale note.",
     triggerEvent: "agent_run.completed",
-    conditions: [{ field: "output.recommendation", op: "eq", value: "pass" }],
-    actions: [
-      { type: "move_deal", config: { stageName: "Passed" } },
-      {
-        type: "add_note",
-        config: {
-          body: "{{agent.name}} recommended pass on {{company.name}} ({{output.fitScore}}/100). Auto-filed to Passed.",
-        },
-      },
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Thesis Screener" },
+      { field: "output.recommendation", op: "eq", value: "pass" },
     ],
+    actions: [{ type: "move_deal", config: { stageName: "Passed" } }],
     isEnabled: true,
   },
   {
@@ -411,7 +403,7 @@ export async function queueAgentRun(
   sessionOrWs: Session | { workspaceId: string },
   agentId: string,
   input: RunAgentInput & { taskId?: string; runInline?: boolean; __wfOriginWorkflowId?: string },
-): Promise<{ run: AgentRunDto; jobId?: string }> {
+): Promise<{ run: AgentRunDto; jobId?: string; alreadyQueued?: boolean }> {
   const session: Session =
     "actor" in sessionOrWs ? sessionOrWs : { workspaceId: sessionOrWs.workspaceId, actor: { userId: null, source: "api" } };
   const agent = await getAgentRow(ctx, session.workspaceId, agentId);
@@ -420,7 +412,7 @@ export async function queueAgentRun(
   }
 
   const created = await ctx.db.transaction(async (tx) => {
-    if (input.companyId && input.trigger !== "manual") {
+    if (input.companyId) {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`agent-run:${agentId}:${input.companyId}`}))`,
       );
@@ -459,7 +451,7 @@ export async function queueAgentRun(
 
   const run = created.row;
   if (created.reused) {
-    return { run: mapRun(run, agent.name) };
+    return { run: mapRun(run, agent.name), alreadyQueued: true };
   }
 
   await logActivity(ctx, ctx.db, {
@@ -508,9 +500,10 @@ export async function listRuns(
   const where = and(...conds);
 
   const rows = await ctx.db
-    .select({ run: agentRuns, agentName: agents.name })
+    .select({ run: agentRuns, agentName: agents.name, companyName: companies.name })
     .from(agentRuns)
     .innerJoin(agents, eq(agents.id, agentRuns.agentId))
+    .leftJoin(companies, eq(companies.id, agentRuns.companyId))
     .where(where)
     .orderBy(desc(agentRuns.createdAt))
     .limit(filter.limit ?? 50)
@@ -521,17 +514,18 @@ export async function listRuns(
     .from(agentRuns)
     .where(where);
 
-  return { items: rows.map((r) => mapRun(r.run, r.agentName)), total };
+  return { items: rows.map((r) => mapRun(r.run, r.agentName, r.companyName)), total };
 }
 
 export async function getRun(ctx: CoreContext, workspaceId: string, runId: string): Promise<AgentRunDto> {
   const [row] = await ctx.db
-    .select({ run: agentRuns, agentName: agents.name })
+    .select({ run: agentRuns, agentName: agents.name, companyName: companies.name })
     .from(agentRuns)
     .innerJoin(agents, eq(agents.id, agentRuns.agentId))
+    .leftJoin(companies, eq(companies.id, agentRuns.companyId))
     .where(and(eq(agentRuns.id, runId), eq(agentRuns.workspaceId, workspaceId)));
   if (!row) throw new CoreError("agent run not found", { status: 404 });
-  return mapRun(row.run, row.agentName);
+  return mapRun(row.run, row.agentName, row.companyName);
 }
 
 /**
@@ -645,7 +639,7 @@ function mapAgent(row: AgentRow): AgentDto {
   };
 }
 
-function mapRun(row: RunRow, agentName?: string): AgentRunDto {
+function mapRun(row: RunRow, agentName?: string, companyName?: string | null): AgentRunDto {
   return {
     id: row.id,
     agentId: row.agentId,
@@ -653,7 +647,7 @@ function mapRun(row: RunRow, agentName?: string): AgentRunDto {
     status: row.status,
     trigger: row.trigger,
     companyId: row.companyId,
-    companyName: undefined,
+    companyName: companyName ?? undefined,
     dealId: row.dealId,
     taskId: row.taskId,
     input: (row.input as Record<string, unknown>) ?? {},

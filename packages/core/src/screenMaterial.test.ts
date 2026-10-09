@@ -10,7 +10,10 @@ describe("screen material", () => {
 
   it("explains a skipped enrichment in one sentence", () => {
     expect(explainEnrichmentSkip("example.com", "example.com is a placeholder page, not a company website")).toBe(
-      "Couldn't enrich example.com — example.com is a placeholder page, not a company website. Thesis screening did not run.",
+      "Couldn't enrich example.com — example.com is a placeholder page, not a company website.",
+    );
+    expect(explainEnrichmentSkip("example.com", "nothing to fill")).toBe(
+      "example.com is already filled in. Parallel only writes empty fields, and it found nothing new to add.",
     );
     expect(explainEnrichmentSkip("example.com", "fetch timeout — no html")).toContain("didn't respond");
   });

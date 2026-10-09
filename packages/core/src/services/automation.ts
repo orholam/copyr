@@ -400,23 +400,32 @@ async function executeAction(
         await dealsSvc.moveDeal(ctx, session, dealId, { stageId: stage.id });
         return { actionIndex: index, type: action.type, status: "ok", detail: `→ ${stage.name}`, at };
       }
-      case "set_deal_fields": {
-        const dealId = getPath(snapshot, "deal.id") as string | undefined;
-        if (!dealId) return skipped(index, action.type, at, "no deal in scope");
-        const fields = (cfg.fields ?? {}) as Record<string, never>;
-        await ctx.db.transaction(async (tx) =>
-          setFieldValues(ctx, tx as never, session, "deal", dealId, fields),
-        );
-        return { actionIndex: index, type: action.type, status: "ok", detail: Object.keys(fields).join(","), at };
-      }
+      case "set_deal_fields":
       case "set_company_fields": {
-        const companyId = (getPath(snapshot, "company.id") as string) ?? undefined;
-        if (!companyId) return skipped(index, action.type, at, "no company in scope");
+        const entityType = action.type === "set_deal_fields" ? "deal" : "company";
+        const entityId =
+          entityType === "deal"
+            ? (getPath(snapshot, "deal.id") as string | undefined)
+            : (getPath(snapshot, "company.id") as string | undefined);
+        if (!entityId) return skipped(index, action.type, at, `no ${entityType} in scope`);
         const fields = (cfg.fields ?? {}) as Record<string, never>;
+        const known = await knownFieldKeys(ctx, session.workspaceId, entityType, Object.keys(fields));
+        const missing = Object.keys(fields).filter((key) => !known.has(key));
+        const present: Record<string, never> = {};
+        for (const key of known) present[key] = fields[key] as never;
+        if (!Object.keys(present).length) {
+          return skipped(index, action.type, at, missing.map((key) => `unknown ${entityType} field "${key}"`).join(", ") || "no fields");
+        }
         await ctx.db.transaction(async (tx) =>
-          setFieldValues(ctx, tx as never, session, "company", companyId, fields),
+          setFieldValues(ctx, tx as never, session, entityType, entityId, present),
         );
-        return { actionIndex: index, type: action.type, status: "ok", detail: Object.keys(fields).join(","), at };
+        const detail = [
+          Object.keys(present).join(","),
+          missing.length ? `skipped ${missing.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join("; ");
+        return { actionIndex: index, type: action.type, status: "ok", detail, at };
       }
       case "webhook": {
         const url = String(cfg.url ?? "");
@@ -509,6 +518,19 @@ async function executeAction(
   }
 }
 
+async function knownFieldKeys(
+  ctx: CoreContext,
+  workspaceId: string,
+  entityType: "deal" | "company",
+  keys: string[],
+): Promise<Set<string>> {
+  if (!keys.length) return new Set();
+  const { customFields } = await import("@copyr/db/schema.js");
+  const defs = await ctx.db.select({ key: customFields.key, target: customFields.target }).from(customFields).where(eq(customFields.workspaceId, workspaceId));
+  const targets = new Set(entityType === "deal" ? ["deal", "company"] : ["company"]);
+  return new Set(defs.filter((d) => targets.has(d.target) && keys.includes(d.key)).map((d) => d.key));
+}
+
 function effectiveConditions(
   workflowName: string,
   conditions: Array<{ field: string; op: string; value?: unknown }>,
@@ -517,12 +539,29 @@ function effectiveConditions(
     return [...conditions, { field: "output.enriched", op: "eq", value: true }];
   }
   if (
+    (workflowName === "Promote advancing screens" || workflowName === "File pass recommendations") &&
+    !conditions.some((c) => c.field === "agent.name")
+  ) {
+    return [...conditions, { field: "agent.name", op: "eq", value: "Thesis Screener" }];
+  }
+  if (
     workflowName === "Screen new companies" &&
     !conditions.some((c) => c.field === "company.domain" && (c.op === "nexists" || c.op === "eq"))
   ) {
     return [...conditions, { field: "company.domain", op: "nexists" }];
   }
   return conditions;
+}
+
+/** The agent result already states the score. These defaults must not write it again as a note. */
+function workflowActions(
+  name: string,
+  actions: Array<{ type: string; config: Record<string, unknown> }>,
+): Array<{ type: string; config: Record<string, unknown> }> {
+  if (name === "Promote advancing screens" || name === "File pass recommendations") {
+    return actions.filter((action) => action.type !== "add_note");
+  }
+  return actions;
 }
 
 function skipped(index: number, type: string, at: string, detail: string): StepResult {
@@ -641,8 +680,9 @@ export async function evaluateWorkflowsForEvent(
     try {
       const session = automationSession(event.workspaceId, wf.createdByUserId);
       const steps: StepResult[] = [];
-      for (let i = 0; i < (wf.actions ?? []).length; i++) {
-        const result = await executeAction(ctx, session, wf.actions[i]!, i, snapshot, wf.id);
+      const actions = workflowActions(wf.name, wf.actions ?? []);
+      for (let i = 0; i < actions.length; i++) {
+        const result = await executeAction(ctx, session, actions[i]!, i, snapshot, wf.id);
         steps.push(result);
       }
       const failed = steps.some((st) => st.status === "error");

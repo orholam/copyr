@@ -276,7 +276,7 @@ export default function CompanyDetail() {
           <button
             type="button"
             onClick={() => setShareOpen(true)}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-xs font-semibold text-white transition hover:bg-brand-700"
+            className="h-8 rounded-lg px-2.5 text-xs font-semibold text-paper-600 transition hover:bg-paper-900/[0.05] hover:text-paper-900"
           >
             Share{companyLinks.length > 0 && ` (${companyLinks.length})`}
           </button>
@@ -286,7 +286,7 @@ export default function CompanyDetail() {
             onClick={() => {
               if (window.confirm(`Delete ${c.name}? This removes the company and its deal.`)) removeCompany.mutate();
             }}
-            className="flex h-8 items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+            className="h-8 rounded-lg px-2.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
           >
             {removeCompany.isPending ? "Deleting…" : "Delete"}
           </button>
@@ -311,22 +311,21 @@ export default function CompanyDetail() {
                   </a>
                 )}
               </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {c.syndicateStatus && (
+                  <HeaderPill>
+                    {c.syndicateStatus === "presented" ? "Presented" : "In queue"}
+                  </HeaderPill>
+                )}
+                {c.firmInvested && <HeaderPill>Firm invested</HeaderPill>}
+                {stage && (
+                  <HeaderPill dot={stage.kind === "won" ? "#10b981" : stage.kind === "lost" ? "#f87171" : "#818cf8"}>
+                    {stage.name}
+                  </HeaderPill>
+                )}
+                <HeaderPill>{c.status}</HeaderPill>
+              </div>
             </div>
-          </div>
-          <div className="flex flex-col items-end gap-1.5">
-            {c.syndicateStatus && (
-              <Badge tone={c.syndicateStatus === "presented" ? "green" : "amber"}>
-                {c.syndicateStatus === "presented" ? "Presented" : "In queue"}
-              </Badge>
-            )}
-            {c.firmInvested && <Badge tone="indigo">Firm invested</Badge>}
-            {stage && (
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-paper-900/[0.11] bg-paper-100 px-2 py-1 text-xs font-medium text-paper-800">
-                <span className={cx("h-1.5 w-1.5 rounded-full", stage.kind === "won" ? "bg-emerald-400/80" : stage.kind === "lost" ? "bg-red-400/80" : "bg-brand-400")} />
-                {stage.name}
-              </span>
-            )}
-            <Badge tone={c.status === "portfolio" ? "green" : c.status === "active" ? "slate" : "purple"}>{c.status}</Badge>
           </div>
         </div>
 
@@ -1106,6 +1105,15 @@ function Choice({
   );
 }
 
+function HeaderPill({ children, dot }: { children: string; dot?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-paper-900/[0.1] bg-paper-50 px-2 py-0.5 text-[11px] font-medium capitalize text-paper-600">
+      {dot && <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />}
+      {children}
+    </span>
+  );
+}
+
 function Meta({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
@@ -1173,6 +1181,15 @@ function isDispatchNoise(a: Activity): boolean {
   return steps.length > 0 && steps.every((s) => s.type === "run_agent" && s.status === "ok");
 }
 
+function humanizeEnrichDetail(detail: string): string {
+  const d = detail.trim();
+  if (!d || d === "no content") return "the website didn't have anything we could use";
+  if (d === "no domain") return "no website is on file";
+  if (d === "nothing to fill") return "";
+  if (d.startsWith("fetch")) return "the website didn't respond";
+  return d;
+}
+
 function presentActivitySummary(a: Activity): string {
   const output =
     a.data?.output && typeof a.data.output === "object" ? (a.data.output as Record<string, unknown>) : null;
@@ -1180,10 +1197,13 @@ function presentActivitySummary(a: Activity): string {
   if ((agentName === "Website Enricher" || a.summary.startsWith("Website Enricher")) && output && output.enriched === false) {
     const domain = typeof output.domain === "string" && output.domain && output.domain !== "skipped" ? output.domain : "this company";
     const detail = typeof output.detail === "string" ? output.detail.replace(/^skipped:\s*/, "") : "there wasn't enough to use";
-    return `Couldn't enrich ${domain} — ${detail}. Thesis screening did not run.`;
+    if (detail.trim() === "nothing to fill") {
+      return `${domain} is already filled in. Parallel only writes empty fields, and it found nothing new to add.`;
+    }
+    return `Couldn't enrich ${domain} — ${humanizeEnrichDetail(detail)}.`;
   }
   if (a.summary === "Website Enricher skipped") {
-    return "Couldn't enrich this company. Thesis screening did not run.";
+    return "Couldn't enrich this company.";
   }
   return a.summary;
 }

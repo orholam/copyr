@@ -34,7 +34,7 @@ interface TurnResult {
   messages: Message[];
 }
 
-type ToolRun = { name: string; args?: Record<string, unknown>; status: "running" | "done"; ok?: boolean; ms?: number };
+type ToolRun = { name: string; args?: Record<string, unknown>; status: "running" | "done"; ok?: boolean; ms?: number; label?: string };
 
 const SUGGESTIONS = [
   { title: "Pipeline pulse", prompt: "How is the pipeline looking?" },
@@ -57,23 +57,62 @@ function groupLabel(iso: string): string {
   return "Older";
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TOOL_TITLES: Record<string, string> = {
+  run_agent: "Run agent",
+  list_agent_runs: "Agent runs",
+  list_agents: "Agents",
+  list_deals: "Deals",
+  list_activity: "Timeline",
+  get_company: "Company",
+  search_companies: "Search",
+};
+
 function formatToolLabel(name: string, args?: Record<string, unknown> | null): string {
-  if (!args || !Object.keys(args).length) return `${name}()`;
-  const inner = Object.entries(args)
-    .slice(0, 4)
-    .map(([k, v]) => {
-      const shown = typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v);
-      return `${k}=${(shown ?? "null").slice(0, 48)}`;
-    })
-    .join(", ");
-  return `${name}(${inner})`;
+  const title = TOOL_TITLES[name] ?? name.replaceAll("_", " ");
+  const bits = Object.values(args ?? {})
+    .filter((value) => (typeof value === "string" || typeof value === "number") && !UUID_RE.test(String(value)))
+    .map(String)
+    .slice(0, 2);
+  return bits.length ? `${title} · ${bits.join(" · ")}` : title;
 }
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"];
+const LAST_CONVERSATION_KEY = "copyr-assistant-conversation";
+const CONVERSATION_STALE_MS = 5 * 60_000;
+
+function readLastConversation(): string | null {
+  try {
+    return sessionStorage.getItem(LAST_CONVERSATION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberConversation(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(LAST_CONVERSATION_KEY, id);
+    else sessionStorage.removeItem(LAST_CONVERSATION_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+function conversationQuery(id: string) {
+  return {
+    queryKey: ["conversation", id] as const,
+    queryFn: () =>
+      api.get<{ conversation: Conversation; messages: Message[] }>(`/assistant/conversations/${id}`),
+    staleTime: CONVERSATION_STALE_MS,
+  };
+}
 
 export default function Assistant() {
   const qc = useQueryClient();
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("c");
+    return fromUrl || readLastConversation();
+  });
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,11 +134,17 @@ export default function Assistant() {
   const openConversation = (id: string) => {
     setActiveId(id);
     setCParam(id);
+    rememberConversation(id);
   };
+
+  useEffect(() => {
+    rememberConversation(activeId);
+  }, [activeId]);
 
   const threadsQ = useQuery({
     queryKey: ["conversations"],
     queryFn: () => api.get<Conversation[]>("/assistant/conversations"),
+    staleTime: CONVERSATION_STALE_MS,
   });
 
   const removeThread = useMutation({
@@ -128,13 +173,29 @@ export default function Assistant() {
   }, [threadsQ.data]);
 
   const threadQ = useQuery({
-    queryKey: ["conversation", activeId],
-    queryFn: () =>
-      api.get<{ conversation: Conversation; messages: Message[] }>(
-        `/assistant/conversations/${activeId}`,
-      ),
+    ...conversationQuery(activeId ?? ""),
     enabled: !!activeId,
   });
+
+  // Warm the open thread and the recent list so a click paints from cache.
+  useEffect(() => {
+    const ids = (threadsQ.data ?? []).slice(0, 6).map((c) => c.id);
+    if (activeId && !ids.includes(activeId)) ids.unshift(activeId);
+    let i = 0;
+    let cancel = false;
+    const step = () => {
+      if (cancel || i >= ids.length) return;
+      const id = ids[i++];
+      if (!id) return;
+      void qc.prefetchQuery(conversationQuery(id)).finally(() => {
+        if (!cancel) window.setTimeout(step, 40);
+      });
+    };
+    step();
+    return () => {
+      cancel = true;
+    };
+  }, [threadsQ.data, activeId, qc]);
 
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [turn, setTurn] = useState<null | { tools: ToolRun[]; reply: string }>(null);
@@ -191,11 +252,12 @@ export default function Assistant() {
             } else if (evt.type === "tool_end") {
               const ok = Boolean(evt.ok);
               const ms = Number(evt.ms);
+              const label = typeof evt.label === "string" ? evt.label : undefined;
               setTurn((t) =>
                 t && {
                   ...t,
                   tools: t.tools.map((x) =>
-                    x.status === "running" ? { ...x, status: "done" as const, ok, ms } : x,
+                    x.status === "running" ? { ...x, status: "done" as const, ok, ms, label } : x,
                   ),
                 },
               );
@@ -237,7 +299,8 @@ export default function Assistant() {
   }
 
   const messages = threadQ.data?.messages ?? [];
-  const isEmpty = !messages.length && !pendingUser && !turn;
+  const openingThread = Boolean(activeId) && !threadQ.data && !threadQ.isError;
+  const isEmpty = !openingThread && !messages.length && !pendingUser && !turn;
 
   return (
     <div className="flex h-full min-h-0">
@@ -280,7 +343,7 @@ export default function Assistant() {
               onClick={() => {
                 setActiveId(null);
                 setCParam(null);
-                qc.removeQueries({ queryKey: ["conversation"] });
+                rememberConversation(null);
               }}
             >
               <IconPlus width={13} height={13} /> New chat
@@ -303,6 +366,8 @@ export default function Assistant() {
                   >
                     <button
                       onClick={() => openConversation(c.id)}
+                      onMouseEnter={() => void qc.prefetchQuery(conversationQuery(c.id))}
+                      onFocus={() => void qc.prefetchQuery(conversationQuery(c.id))}
                       className="block w-full py-1.5 pl-2.5 pr-7 text-left"
                     >
                       <p className={cx("truncate text-xs font-medium", activeId === c.id ? "text-brand-800" : "text-paper-800")}>
@@ -347,7 +412,15 @@ export default function Assistant() {
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-8">
-            {isEmpty ? (
+            {openingThread ? (
+              <div className="flex min-h-[52vh] items-center justify-center text-sm text-paper-400">
+                Opening conversation…
+              </div>
+            ) : threadQ.isError && activeId ? (
+              <div className="flex min-h-[52vh] items-center justify-center text-sm text-red-600">
+                {threadQ.error instanceof Error ? threadQ.error.message : "Could not open that conversation."}
+              </div>
+            ) : isEmpty ? (
               <div className="flex min-h-[52vh] flex-col items-center justify-center text-center">
                 <span className="btn-ink animate-pop relative flex h-11 w-11 items-center justify-center rounded-2xl text-paper-50">
                   <span aria-hidden className="absolute inset-0 animate-ping rounded-2xl bg-paper-900/20 [animation-duration:2.6s]" />
@@ -512,7 +585,7 @@ function LiveTurn({ tools, reply }: { tools: ToolRun[]; reply: string }) {
                 ) : (
                   <IconX width={9} height={9} strokeWidth={3} />
                 )}
-                {formatToolLabel(t.name, t.args)}
+                {t.label || formatToolLabel(t.name, t.args)}
                 {typeof t.ms === "number" && <span className="num text-paper-400">{t.ms}ms</span>}
               </span>
             ))}

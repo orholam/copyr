@@ -8,14 +8,17 @@ export function isPlaceholderCopy(text: string): boolean {
 
 export function explainEnrichmentSkip(domain: string | null | undefined, detail: string | null | undefined): string {
   const site = domain?.trim() || "this company";
-  return `Couldn't enrich ${site} — ${humanizeEnrichDetail(detail)}. Thesis screening did not run.`;
+  if ((detail ?? "").trim() === "nothing to fill") {
+    return `${site} is already filled in. Parallel only writes empty fields, and it found nothing new to add.`;
+  }
+  return `Couldn't enrich ${site} — ${humanizeEnrichDetail(detail)}.`;
 }
 
 function humanizeEnrichDetail(detail: string | null | undefined): string {
   const d = (detail ?? "").trim();
   if (!d || d === "no content") return "the website didn't have anything we could use";
   if (d === "no domain") return "no website is on file";
-  if (d === "nothing to fill") return "the website didn't add anything beyond what's already here";
+  if (d === "nothing to fill") return "Parallel found nothing new to add";
   if (d === "company not found") return "the company record disappeared";
   if (d.startsWith("fetch")) return "the website didn't respond";
   if (d === "PARALLEL_API_KEY is not set") return "company research is not configured";

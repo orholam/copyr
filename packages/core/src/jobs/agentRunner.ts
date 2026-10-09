@@ -53,7 +53,7 @@ export async function executeAgentRun(
       if (!companyId) throw new Error("Website Enricher requires a company scope");
       steps.push({ step: "parallel_research", status: "running", at: now() });
       const { enrichCompanyFromDomain } = await import("../services/enrichment.js");
-      const result = await enrichCompanyFromDomain(ctx, workspaceId, companyId);
+      const result = await enrichCompanyFromDomain(ctx, workspaceId, companyId, { announce: false });
       output = {
         enriched: result.enriched,
         detail: result.detail ?? null,
@@ -69,7 +69,6 @@ export async function executeAgentRun(
         detail: sentence,
         at: now(),
       });
-      await writeCompanyNote(ctx, workspaceId, companyId, sentence);
     } else if (agent.kind === "thesis_screen") {
       if (!companyId) throw new Error("thesis_screen requires a company scope");
       const context = await gatherCompanyContext(ctx, workspaceId, companyId);

@@ -15,34 +15,26 @@ export const WORKFLOW_USE_CASES: Array<{
   },
   {
     name: "Promote advancing screens",
-    blurb: "Screen says advance → High conviction, Initial Review, partner note.",
+    blurb: "Thesis Screener says advance → Initial Review. High conviction is set when that field exists.",
     triggerEvent: "agent_run.completed",
-    conditions: [{ field: "output.recommendation", op: "eq", value: "advance" }],
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Thesis Screener" },
+      { field: "output.recommendation", op: "eq", value: "advance" },
+    ],
     actions: [
       { type: "set_deal_fields", config: { fields: { conviction: "High" } } },
       { type: "move_deal", config: { stageName: "Initial Review" } },
-      {
-        type: "add_note",
-        config: {
-          body: "{{agent.name}} scored {{output.fitScore}}/100 (advance) on {{company.name}} — flagged for partner attention.",
-        },
-      },
     ],
   },
   {
     name: "File pass recommendations",
-    blurb: "Screen says pass → move to Passed with a short rationale note.",
+    blurb: "Thesis Screener says pass → move to Passed.",
     triggerEvent: "agent_run.completed",
-    conditions: [{ field: "output.recommendation", op: "eq", value: "pass" }],
-    actions: [
-      { type: "move_deal", config: { stageName: "Passed" } },
-      {
-        type: "add_note",
-        config: {
-          body: "{{agent.name}} recommended pass on {{company.name}} ({{output.fitScore}}/100). Auto-filed to Passed.",
-        },
-      },
+    conditions: [
+      { field: "agent.name", op: "eq", value: "Thesis Screener" },
+      { field: "output.recommendation", op: "eq", value: "pass" },
     ],
+    actions: [{ type: "move_deal", config: { stageName: "Passed" } }],
   },
   {
     name: "Diligence kickoff",

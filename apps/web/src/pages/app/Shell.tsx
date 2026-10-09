@@ -113,60 +113,83 @@ export default function AppShell() {
     if (ws?.slug) rememberWorkspaceSlug(ws.slug);
   }, [ws?.slug]);
 
-  // Warm the pipeline, then each company, so opening a deal does not wait on the network.
+  // Warm the pipeline after the assistant history, and only warm companies
+  // once the browser is idle. Doing it immediately floods the API and makes
+  // coming back to a conversation wait behind dozens of company requests.
   useEffect(() => {
     if (!ws?.id) return;
     let cancelled = false;
-    void (async () => {
-      await qc.prefetchQuery({
-        queryKey: ["pipelines"],
-        queryFn: () => api.get("/pipelines"),
-        staleTime: 5 * 60_000,
-      });
-      const deals = await qc.fetchQuery({
-        queryKey: ["deals", "", null],
-        queryFn: () => api.get<{ items: Array<{ id: string; companyId?: string }> }>("/deals?limit=500&archived=false"),
-        staleTime: 60_000,
-      });
-      const ids = [...new Set((deals.items ?? []).map((d) => d.companyId || d.id))];
-      let cursor = 0;
-      const warm = async () => {
-        while (!cancelled && cursor < ids.length) {
-          const id = ids[cursor++];
-          if (!id) return;
-          await Promise.all([
-            qc.prefetchQuery({
-              queryKey: ["company", id],
-              queryFn: () => api.get(`/companies/${id}`),
-              staleTime: 60_000,
-            }),
-            qc.prefetchQuery({
-              queryKey: ["notes", id],
-              queryFn: () => api.get(`/notes?companyId=${id}`),
-              staleTime: 60_000,
-            }),
-            qc.prefetchQuery({
-              queryKey: ["activity", id],
-              queryFn: () => api.get(`/activity?companyId=${id}&limit=30`),
-              staleTime: 60_000,
-            }),
-            qc.prefetchQuery({
-              queryKey: ["documents", id],
-              queryFn: () => api.get(`/documents?companyId=${id}`),
-              staleTime: 60_000,
-            }),
-            qc.prefetchQuery({
-              queryKey: ["contacts", id],
-              queryFn: () => api.get(`/companies/${id}/contacts`),
-              staleTime: 60_000,
-            }),
-          ]);
-        }
-      };
-      await Promise.all(Array.from({ length: 4 }, () => warm()));
-    })();
+    let idleId = 0;
+    let timer = 0;
+    void qc.prefetchQuery({
+      queryKey: ["conversations"],
+      queryFn: () => api.get("/assistant/conversations"),
+      staleTime: 5 * 60_000,
+    });
+    const warmCompanies = () => {
+      if (cancelled) return;
+      void (async () => {
+        await qc.prefetchQuery({
+          queryKey: ["pipelines"],
+          queryFn: () => api.get("/pipelines"),
+          staleTime: 5 * 60_000,
+        });
+        const deals = await qc.fetchQuery({
+          queryKey: ["deals", "", null],
+          queryFn: () => api.get<{ items: Array<{ id: string; companyId?: string }> }>("/deals?limit=500&archived=false"),
+          staleTime: 60_000,
+        });
+        const ids = [...new Set((deals.items ?? []).map((d) => d.companyId || d.id))];
+        let cursor = 0;
+        const warm = async () => {
+          while (!cancelled && cursor < ids.length) {
+            const id = ids[cursor++];
+            if (!id) return;
+            await Promise.all([
+              qc.prefetchQuery({
+                queryKey: ["company", id],
+                queryFn: () => api.get(`/companies/${id}`),
+                staleTime: 60_000,
+              }),
+              qc.prefetchQuery({
+                queryKey: ["notes", id],
+                queryFn: () => api.get(`/notes?companyId=${id}`),
+                staleTime: 60_000,
+              }),
+              qc.prefetchQuery({
+                queryKey: ["activity", id],
+                queryFn: () => api.get(`/activity?companyId=${id}&limit=30`),
+                staleTime: 60_000,
+              }),
+              qc.prefetchQuery({
+                queryKey: ["documents", id],
+                queryFn: () => api.get(`/documents?companyId=${id}`),
+                staleTime: 60_000,
+              }),
+              qc.prefetchQuery({
+                queryKey: ["contacts", id],
+                queryFn: () => api.get(`/companies/${id}/contacts`),
+                staleTime: 60_000,
+              }),
+            ]);
+          }
+        };
+        await Promise.all(Array.from({ length: 2 }, () => warm()));
+      })();
+    };
+    const start = () => {
+      if (cancelled) return;
+      warmCompanies();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(start, { timeout: 4_000 });
+    } else {
+      timer = window.setTimeout(start, 2_000);
+    }
     return () => {
       cancelled = true;
+      if (idleId) window.cancelIdleCallback(idleId);
+      if (timer) window.clearTimeout(timer);
     };
   }, [ws?.id, qc]);
 

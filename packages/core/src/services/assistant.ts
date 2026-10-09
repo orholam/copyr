@@ -243,6 +243,57 @@ function builtinHost(ctx: CoreContext): AssistantToolHost {
  * so the transcript stays readable for synthesis and cheap for real models.
  */
 const DROP_KEYS = new Set(["workspaceId", "position", "createdByUserId", "userId", "kindHint"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TOOL_TITLES: Record<string, string> = {
+  run_agent: "Run agent",
+  list_agent_runs: "Agent runs",
+  list_agents: "Agents",
+  list_deals: "Deals",
+  list_activity: "Timeline",
+  get_company: "Company",
+  search_companies: "Search",
+};
+
+function namedField(obj: Record<string, unknown> | null, key: string): string | null {
+  const value = obj?.[key];
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text && !UUID_RE.test(text) ? text : null;
+}
+
+/** What the chat chip shows: agent and company names, never raw ids. */
+function toolDisplayArgs(args: Record<string, unknown>, resultText: string): Record<string, unknown> {
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    const value = JSON.parse(resultText) as unknown;
+    if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+  } catch {
+    parsed = null;
+  }
+  const run = parsed?.run && typeof parsed.run === "object" ? (parsed.run as Record<string, unknown>) : null;
+  const agentName = namedField(parsed, "agentName") ?? namedField(run, "agentName") ?? namedField(args, "agentName");
+  const companyName = namedField(parsed, "companyName") ?? namedField(run, "companyName") ?? namedField(args, "companyName");
+  const shown: Record<string, unknown> = {};
+  if (agentName) shown.agent = agentName;
+  if (companyName) shown.company = companyName;
+  if (Object.keys(shown).length) return shown;
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const text = String(value).trim();
+    if (!text || UUID_RE.test(text) || key.endsWith("Id")) continue;
+    shown[key] = text.length > 42 ? `${text.slice(0, 41)}…` : text;
+  }
+  return shown;
+}
+
+function toolLabel(name: string, args: Record<string, unknown>): string {
+  const title = TOOL_TITLES[name] ?? name.replaceAll("_", " ");
+  const bits = Object.values(args)
+    .filter((value) => typeof value === "string" || typeof value === "number")
+    .map(String)
+    .slice(0, 2);
+  return bits.length ? `${title} · ${bits.join(" · ")}` : title;
+}
 
 function compactToolResult(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined || value === "") return undefined;
@@ -347,7 +398,7 @@ export interface SendResult {
 export type AssistantStreamEvent =
   | { type: "start"; conversationId: string }
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
-  | { type: "tool_end"; name: string; ok: boolean; ms: number }
+  | { type: "tool_end"; name: string; ok: boolean; ms: number; label?: string }
   | { type: "delta"; text: string };
 
 type Emit = (e: AssistantStreamEvent) => void;
@@ -426,6 +477,7 @@ async function runTurn(
   let rounds = 0;
   let finalReply: string | null = null;
   let creditsUsed = 0;
+  const seenThisTurn = new Set<string>();
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
@@ -436,10 +488,11 @@ async function runTurn(
       const seen = new Set<string>();
       const calls = turn.toolCalls.filter((call) => {
         const key = `${call.name}:${JSON.stringify(call.args ?? {})}`;
-        if (seen.has(key)) return false;
+        if (seen.has(key) || seenThisTurn.has(key)) return false;
         seen.add(key);
         return true;
       });
+      if (!calls.length) break;
       // persist the assistant's intent to call tools
       await insertMessage(
         "assistant",
@@ -453,6 +506,7 @@ async function runTurn(
         const args = spec
           ? fillMissingToolArgs(spec, call.args ?? {}, lastUser?.content ?? content)
           : (call.args ?? {});
+        seenThisTurn.add(`${call.name}:${JSON.stringify(args)}`);
         emit?.({ type: "tool_start", name: call.name, args });
         const t0 = Date.now();
         let ok = true;
@@ -478,8 +532,9 @@ async function runTurn(
               : {}),
           }).slice(0, 2_000);
         }
-        emit?.({ type: "tool_end", name: call.name, ok, ms: Date.now() - t0 });
-        await insertMessage("tool", resultText, { name: call.name, args, ok });
+        const shown = toolDisplayArgs(args, resultText);
+        emit?.({ type: "tool_end", name: call.name, ok, ms: Date.now() - t0, label: toolLabel(call.name, shown) });
+        await insertMessage("tool", resultText, { name: call.name, args: shown, ok });
         history.push({
           role: "tool",
           content: `${call.name}(${JSON.stringify(args)}) → ${resultText}`,
@@ -495,7 +550,10 @@ async function runTurn(
   if (finalReply === null) {
     history.push({
       role: "user",
-      content: "Answer the last question from the tool results above. Do not call any more tools.",
+      content:
+        `Reply now, and only to this request: ${JSON.stringify(content)}. ` +
+        "If an agent was queued, name the agent and the company in one or two sentences and stop. " +
+        "Do not repeat an earlier list of companies. Do not call tools.",
     });
     const closing = await ctx.ai.assistantTurn({ messages: history, tools: [] });
     creditsUsed += 1;
