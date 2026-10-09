@@ -72,7 +72,8 @@ export default function AppShell() {
   const qc = useQueryClient();
   const isAssistantRoute = location.pathname === "/app";
   const isWorkflowsRoute = location.pathname === "/app/workflows";
-  const isFullBleed = isAssistantRoute || isWorkflowsRoute;
+  const isPipelineRoute = location.pathname === "/app/pipeline";
+  const isFullBleed = isAssistantRoute || isWorkflowsRoute || isPipelineRoute;
   const [showAdd, setShowAdd] = useState(false);
   const [newOrg, setNewOrg] = useState("");
   const [showNewOrg, setShowNewOrg] = useState(false);
@@ -362,7 +363,7 @@ export default function AppShell() {
 
         {/* Assistant + Workflows are immersive full-bleed surfaces */}
         {isFullBleed ? (
-          <div className="min-h-0 flex-1">{outlet}</div>
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{outlet}</div>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-[1720px] px-5 py-4">{outlet}</div>

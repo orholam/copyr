@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,28 +19,11 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { api, apiUrl } from "../../lib/api";
+import { api } from "../../lib/api";
 import {
   Avatar, Badge, Button, EmptyState, ErrorState, PageHeader, SegmentedControl, Skeleton, cx, money, timeAgo,
 } from "../../components/ui";
-import { IconChevronLeft, IconChevronRight, IconFlame, IconPlus, IconSearch } from "../../components/icons";
-import { parseScreenTag, stripScreenTags, type ScreenRec } from "../../lib/screenTag";
-
-function ScreenChip({ recommendation, fitScore }: { recommendation: ScreenRec; fitScore: number | null }) {
-  const cls =
-    recommendation === "advance"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-      : recommendation === "pass"
-        ? "border-red-300 bg-red-50 text-red-700"
-        : "border-amber-300 bg-amber-50 text-amber-800";
-  return (
-    <span className={cx("rounded-full border px-1.5 py-px text-[10px] font-bold uppercase tracking-wide", cls)}>
-      {recommendation}
-      {fitScore != null ? ` ${fitScore}` : ""}
-    </span>
-  );
-}
-
+import { IconFlame, IconPlus, IconSearch } from "../../components/icons";
 interface Participant {
   id: string;
   name: string;
@@ -67,11 +50,6 @@ interface Deal {
   updatedAt: string;
   company: { id: string; name: string; domain: string | null; sector: string | null; description?: string | null };
   fields: Record<string, string | number | boolean | string[] | null>;
-}
-interface SavedView {
-  id: string;
-  name: string;
-  query: Record<string, string>;
 }
 interface Stage {
   id: string;
@@ -132,51 +110,35 @@ function SourceTag({ source }: { source: string }) {
 }
 
 function CardBody({ deal }: { deal: Deal }) {
-  const screen = parseScreenTag(deal.tags);
-  const tags = stripScreenTags(deal.tags ?? []).slice(0, 3);
-  const round = deal.roundLabel || deal.roundStage;
   const votes = deal.upvoters?.length ?? 0;
+  const subtitle = deal.company.domain ?? deal.company.sector ?? null;
+  const round = deal.roundLabel || deal.roundStage;
+  const ask = deal.askAmount !== null && !deal.roundLabel ? money(deal.askAmount) : null;
+  const detail = [
+    round,
+    deal.syndicateStatus === "presented" ? "Presented" : deal.syndicateStatus === "queued" ? "Queued" : null,
+    deal.firmInvested ? "Invested" : null,
+    votes > 0 ? `${votes} vote${votes === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <>
       <div className="flex items-start gap-2.5">
         <Avatar name={deal.company.name} size={32} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13.5px] font-semibold leading-5 text-paper-900">{deal.company.name}</p>
-          <p className="mt-0.5 truncate text-xs font-medium leading-4 text-paper-500">
-            {deal.company.domain ?? deal.company.sector ?? deal.title}
-          </p>
+          {subtitle && <p className="mt-0.5 truncate text-xs font-medium leading-4 text-paper-500">{subtitle}</p>}
         </div>
         {deal.priority >= 4 && <IconFlame width={13} height={13} className="mt-1 shrink-0 text-orange-600" />}
       </div>
-      {round && (
-        <p className="mt-2 truncate pl-[42px] text-[12.5px] font-semibold tracking-tight text-paper-900" title={round}>
-          {round}
-        </p>
-      )}
-      <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-[42px]">
-        {deal.syndicateStatus && (
-          <Badge tone={deal.syndicateStatus === "presented" ? "green" : "amber"}>{deal.syndicateStatus}</Badge>
-        )}
-        {deal.firmInvested && <Badge tone="indigo">Invested</Badge>}
-        {deal.roundStage && deal.roundLabel && <Badge tone="slate">{deal.roundStage}</Badge>}
-        {screen && <ScreenChip recommendation={screen.recommendation} fitScore={screen.fitScore} />}
-        {votes > 0 && (
-          <span className="num ml-auto text-[11px] font-semibold text-paper-500">{votes} vote{votes === 1 ? "" : "s"}</span>
-        )}
-        {deal.askAmount !== null && !deal.roundLabel && (
-          <span className="num ml-auto text-[13px] font-bold tracking-tight text-paper-900">{money(deal.askAmount)}</span>
-        )}
-      </div>
-      {tags.length > 0 && (
-        <p className="mt-1.5 truncate pl-[42px] text-[10.5px] font-medium text-paper-400">
-          {tags.map((t) => `#${t}`).join("  ")}
-        </p>
-      )}
-      {deal.submittedBy && (
-        <p className="mt-1 truncate pl-[42px] text-[11px] text-paper-500">
-          via {deal.submittedBy.name}
-          {deal.submittedBy.firm ? ` · ${deal.submittedBy.firm}` : ""}
-        </p>
+      {(detail || ask) && (
+        <div className="mt-2 flex items-center gap-2 pl-[42px]">
+          <p className="min-w-0 flex-1 truncate text-[12px] leading-4 text-paper-600" title={detail}>
+            {detail}
+          </p>
+          {ask && <span className="num shrink-0 text-[13px] font-bold tracking-tight text-paper-900">{ask}</span>}
+        </div>
       )}
     </>
   );
@@ -186,10 +148,12 @@ function BoardCard({
   deal,
   interactive,
   onOpen,
+  onDelete,
 }: {
   deal: Deal;
   interactive?: boolean;
   onOpen: () => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: deal.id });
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: deal.id, disabled: isDragging });
@@ -214,6 +178,19 @@ function BoardCard({
       {isOver && (
         <span aria-hidden className="absolute inset-x-1 -top-[4px] h-[2px] rounded-full bg-brand-500" />
       )}
+      <button
+        type="button"
+        aria-label={`Delete ${deal.company.name}`}
+        title="Delete deal"
+        className="absolute right-1.5 top-1.5 hidden h-6 items-center rounded-md px-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-50 group-hover:inline-flex"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+      >
+        Delete
+      </button>
       <CardBody deal={deal} />
     </div>
   );
@@ -236,11 +213,18 @@ function Column({
     <div
       ref={setNodeRef}
       className={cx(
-        "flex w-[288px] shrink-0 flex-col rounded-2xl p-2 transition-colors duration-150",
+        "flex min-h-full w-[288px] shrink-0 flex-col rounded-2xl p-2 transition-colors duration-150",
         active ? "bg-brand-500/[0.05] ring-1 ring-inset ring-brand-500/25" : "bg-paper-900/[0.04]",
       )}
     >
-      <div className="flex items-baseline justify-between gap-2 px-2 pb-2 pt-1.5">
+      <div
+        className="sticky top-0 z-[1] -mx-2 flex items-baseline justify-between gap-2 px-4 pb-2 pt-1.5"
+        style={{
+          background: active
+            ? "color-mix(in srgb, #5e6ad2 6%, rgb(var(--paper-100)))"
+            : "color-mix(in srgb, rgb(var(--paper-900) / 0.04), rgb(var(--paper-100)))",
+        }}
+      >
         <span className="flex min-w-0 items-center gap-2">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: stage.color }} />
           <span className="truncate text-[11px] font-bold uppercase tracking-[0.08em] text-paper-700">{stage.name}</span>
@@ -250,7 +234,7 @@ function Column({
           <span className="num shrink-0 text-[11.5px] font-semibold tabular-nums text-paper-500">{money(total)}</span>
         )}
       </div>
-      <div data-vscroll className="min-h-[120px] flex-1 space-y-1.5 overflow-y-auto px-0.5">
+      <div className="min-h-[120px] space-y-1.5 px-0.5 pb-2">
         {children}
         {!deals.length && (
           <p className="px-3 pb-6 pt-6 text-center font-serif text-[13px] italic text-paper-400">Nothing here yet.</p>
@@ -261,7 +245,7 @@ function Column({
 }
 
 export default function Pipeline() {
-  const [view, setView] = useState<"board" | "table">("board");
+  const [view, setView] = useState<"board" | "table">("table");
   const [q, setQ] = useState("");
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -277,9 +261,6 @@ export default function Pipeline() {
     Record<string, { stageId: string; beforeDealId?: string | null }>
   >({});
   const lastDrag = useRef(0);
-  const boardRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [canScroll, setCanScroll] = useState({ left: false, right: false });
 
   const openRecord = (companyId: string) => {
     if (Date.now() - lastDrag.current < 250) return;
@@ -300,19 +281,6 @@ export default function Pipeline() {
 
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [syndicate, setSyndicate] = useState<"all" | "queued" | "presented" | "invested">("all");
-  const viewsQ = useQuery({
-    queryKey: ["saved-views"],
-    queryFn: () => api.get<SavedView[]>("/views"),
-  });
-  const saveView = useMutation({
-    mutationFn: (name: string) =>
-      api.post("/views", { name, query: { ...(q ? { q } : {}), ...(tagFilter ? { tags: tagFilter } : {}) } }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["saved-views"] }),
-  });
-  const deleteView = useMutation({
-    mutationFn: (vid: string) => api.delete(`/views/${vid}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["saved-views"] }),
-  });
   const dealsKey = ["deals", q, tagFilter] as const;
   const dealsQ = useQuery({
     queryKey: dealsKey,
@@ -381,6 +349,60 @@ export default function Pipeline() {
     },
   });
 
+  const removeDeal = useMutation({
+    mutationFn: (companyId: string) => api.delete(`/companies/${companyId}`),
+    onMutate: async (companyId) => {
+      await qc.cancelQueries({ queryKey: ["deals"] });
+      const snapshots = qc.getQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] });
+      qc.setQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] }, (old) => {
+        if (!old?.items) return old;
+        const items = old.items.filter((d) => d.companyId !== companyId && d.id !== companyId);
+        return { ...old, items, total: Math.max(0, old.total - (old.items.length - items.length)) };
+      });
+      return { snapshots };
+    },
+    onError: (_err, _id, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) {
+        if (data) qc.setQueryData(key, data);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+
+  const patchDeal = useMutation({
+    mutationFn: (input: { id: string; patch: DealPatch }) => api.patch(`/deals/${input.id}`, input.patch),
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: ["deals"] });
+      const snapshots = qc.getQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] });
+      qc.setQueriesData<{ items: Deal[]; total: number }>({ queryKey: ["deals"] }, (old) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.map((d) =>
+            d.id === input.id ? { ...d, ...input.patch, updatedAt: new Date().toISOString() } : d,
+          ),
+        };
+      });
+      return { snapshots };
+    },
+    onError: (_err, _input, ctx) => {
+      for (const [key, data] of ctx?.snapshots ?? []) {
+        if (data) qc.setQueryData(key, data);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+      void qc.invalidateQueries({ queryKey: ["deal"] });
+    },
+  });
+
+  const askDelete = (deal: Deal) => {
+    const ok = window.confirm(`Delete ${deal.company.name}? This removes the company and its deal from the pipeline.`);
+    if (ok) removeDeal.mutate(deal.companyId);
+  };
+
   const onDragStart = (e: DragStartEvent) => {
     lastDrag.current = Date.now();
     setActiveDeal(dealsQ.data?.items.find((d) => d.id === e.active.id) ?? null);
@@ -447,50 +469,6 @@ export default function Pipeline() {
 
   const loading = (pipelinesQ.isLoading && !pipelinesQ.data) || (dealsQ.isLoading && !dealsQ.data);
 
-  const updateScrollHints = useCallback(() => {
-    const el = boardRef.current;
-    if (!el) return;
-    setCanScroll({
-      left: el.scrollLeft > 4,
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = boardRef.current;
-    const track = trackRef.current;
-    if (!el) return;
-    updateScrollHints();
-    el.addEventListener("scroll", updateScrollHints, { passive: true });
-    const ro = new ResizeObserver(updateScrollHints);
-    ro.observe(el);
-    if (track) ro.observe(track);
-    return () => {
-      el.removeEventListener("scroll", updateScrollHints);
-      ro.disconnect();
-    };
-  }, [updateScrollHints, view, loading]);
-
-  // Mouse wheels only emit deltaY — map it to horizontal board scrolling,
-  // except while a hovered column list can still scroll vertically on its own.
-  const onBoardWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (e.deltaX !== 0 || !e.deltaY) return; // trackpad / shift+wheel scroll natively
-    const el = e.currentTarget;
-    if (el.scrollWidth <= el.clientWidth) return;
-    const list = (e.target as HTMLElement).closest("[data-vscroll]");
-    if (list && list.scrollHeight > list.clientHeight) {
-      const atTop = list.scrollTop <= 0;
-      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
-      if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return;
-    }
-    el.scrollLeft += e.deltaY;
-  };
-
-  const nudgeBoard = (dir: -1 | 1) => {
-    const el = boardRef.current;
-    if (el) el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.7), behavior: "smooth" });
-  };
-
   if (pipelinesQ.isError || dealsQ.isError) {
     const err = pipelinesQ.error ?? dealsQ.error;
     return (
@@ -502,7 +480,7 @@ export default function Pipeline() {
   }
 
   return (
-    <div className="-mx-6 -my-5 flex h-[calc(100dvh-76px)] animate-fade-up flex-col px-6 pb-4 pt-5">
+    <div className="flex h-full min-h-0 min-w-0 animate-fade-up flex-col overflow-hidden px-6 py-5">
       <PageHeader
         title="Pipeline"
         subtitle={
@@ -511,7 +489,7 @@ export default function Pipeline() {
             : undefined
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             <label className="relative">
               <IconSearch width={13} height={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-paper-400" />
               <input
@@ -528,30 +506,13 @@ export default function Pipeline() {
                   #{tagFilter} ×
                 </button>
               )}
-              <a
-                href={apiUrl("/api/v1/export/deals?format=csv")}
-                className="flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
-                title="Export all deals to CSV"
-              >
-                ⬇ CSV
-              </a>
-              <button
-                onClick={async () => {
-                  const name = window.prompt("Name this view", q || tagFilter || "All deals");
-                  if (name?.trim()) saveView.mutate(name.trim());
-                }}
-                className="flex h-8 items-center rounded-md border border-paper-900/[0.14] bg-white px-2.5 text-xs font-medium text-paper-800 transition hover:bg-paper-100"
-                title="Save current filters as a view"
-              >
-                ＋ Save view
-              </button>
             </label>
             <SegmentedControl
               value={view}
               onChange={setView}
               options={[
-                { value: "board", label: "Board" },
                 { value: "table", label: "Table" },
+                { value: "board", label: "Board" },
               ]}
             />
             <Link
@@ -579,7 +540,7 @@ export default function Pipeline() {
         {(
           [
             ["all", "All"],
-            ["queued", "Queued"],
+            ["queued", "In queue"],
             ["presented", "Presented"],
             ["invested", "Firm invested"],
           ] as const
@@ -598,30 +559,13 @@ export default function Pipeline() {
             {label}
           </button>
         ))}
+        <p className="ml-1 text-[12px] text-paper-500">
+          In queue means it has not been shown to the partnership yet. Presented means it already has.
+        </p>
       </div>
 
-      {(viewsQ.data ?? []).length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-paper-500">Views:</span>
-          {(viewsQ.data ?? []).map((v) => {
-            const active = (v.query.q ?? "") === q && (v.query.tags ?? "") === (tagFilter ?? "");
-            return (
-              <span key={v.id} className={cx(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition",
-                active ? "border-brand-400 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-paper-600 hover:border-slate-300",
-              )}>
-                <button onClick={() => { setQ(v.query.q ?? ""); setTagFilter(v.query.tags ?? null); }}>
-                  {v.name}
-                </button>
-                <button className="text-paper-400 hover:text-red-500" onClick={() => deleteView.mutate(v.id)}>×</button>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
       {loading ? (
-        <div className="min-h-0 flex-1 overflow-hidden pb-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
           <div className="flex h-full gap-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="w-[288px] shrink-0 space-y-1.5 rounded-2xl bg-paper-900/[0.04] p-2">
@@ -657,35 +601,8 @@ export default function Pipeline() {
           onDragEnd={onDragEnd}
           onDragCancel={onDragCancel}
         >
-          <div className="relative min-h-0 flex-1">
-            {!activeDeal && canScroll.left && (
-              <>
-                <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-paper-100 to-transparent" />
-                <button
-                  type="button"
-                  aria-label="Scroll board left"
-                  onClick={() => nudgeBoard(-1)}
-                  className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-paper-900/[0.09] bg-white text-paper-600 shadow-[0_4px_14px_-6px_rgba(23,22,19,0.25)] transition-colors hover:bg-paper-900/[0.04]"
-                >
-                  <IconChevronLeft width={15} height={15} />
-                </button>
-              </>
-            )}
-            {!activeDeal && canScroll.right && (
-              <>
-                <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-paper-100 to-transparent" />
-                <button
-                  type="button"
-                  aria-label="Scroll board right"
-                  onClick={() => nudgeBoard(1)}
-                  className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-paper-900/[0.09] bg-white text-paper-600 shadow-[0_4px_14px_-6px_rgba(23,22,19,0.25)] transition-colors hover:bg-paper-900/[0.04]"
-                >
-                  <IconChevronRight width={15} height={15} />
-                </button>
-              </>
-            )}
-            <div ref={boardRef} onWheel={onBoardWheel} className="h-full overflow-x-auto overflow-y-hidden pb-1">
-              <div ref={trackRef} className="flex h-full min-h-0 w-max min-w-full gap-4 pr-1">
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-auto">
+            <div className="flex min-h-full w-max min-w-full items-stretch gap-4 pb-2">
                 {pipeline?.stages.map((stage) => (
                   <Column
                     key={stage.id}
@@ -699,11 +616,11 @@ export default function Pipeline() {
                         deal={deal}
                         interactive={!activeDeal}
                         onOpen={() => openRecord(deal.companyId)}
+                        onDelete={() => askDelete(deal)}
                       />
                     ))}
                   </Column>
                 ))}
-              </div>
             </div>
           </div>
           {/* Portal to body: ancestors of the board (e.g. animate-fade-up) keep a
@@ -721,7 +638,7 @@ export default function Pipeline() {
           )}
         </DndContext>
       ) : (
-        <div key="table" className="animate-fade-in min-h-0 flex-1 overflow-auto">
+        <div key="table" className="animate-fade-in min-h-0 min-w-0 flex-1 overflow-auto">
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="sticky top-0 z-10 border-b border-paper-900/[0.1] bg-paper-100/95 text-[11px] font-bold uppercase tracking-[0.08em] text-paper-500 backdrop-blur">
@@ -734,6 +651,7 @@ export default function Pipeline() {
                 <Th>Stage</Th>
                 <Th className="hidden sm:table-cell">Source</Th>
                 <Th>Updated</Th>
+                <Th><span className="sr-only">Delete</span></Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-paper-900/[0.05]">
@@ -756,19 +674,38 @@ export default function Pipeline() {
                         </div>
                       </div>
                     </td>
-                    <td className="max-w-[220px] px-3 py-3 text-[13px] font-medium text-paper-800">
-                      <span className="line-clamp-2">{deal.roundLabel || deal.roundStage || "—"}</span>
+                    <td className="max-w-[220px] px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <QuietText
+                        value={deal.roundLabel || deal.roundStage || ""}
+                        display={
+                          <span className="line-clamp-2">{deal.roundLabel || deal.roundStage || "—"}</span>
+                        }
+                        fill
+                        className="text-[13px] font-medium leading-5 text-paper-800"
+                        commit={(raw) => {
+                          const next = raw.trim() || null;
+                          const current = deal.roundLabel || deal.roundStage || null;
+                          if (next !== current) patchDeal.mutate({ id: deal.id, patch: { roundLabel: next } });
+                        }}
+                      />
                     </td>
-                    <td className="num whitespace-nowrap px-3 py-3 text-sm font-bold text-paper-900">{money(deal.askAmount)}</td>
-                    <td className="whitespace-nowrap px-3 py-3">
-                      <span className="flex items-center gap-1">
-                        {deal.syndicateStatus ? (
-                          <Badge tone={deal.syndicateStatus === "presented" ? "green" : "amber"}>{deal.syndicateStatus}</Badge>
-                        ) : (
-                          <span className="text-paper-400">—</span>
-                        )}
-                        {deal.firmInvested && <Badge tone="indigo">Invested</Badge>}
-                      </span>
+                    <td className="whitespace-nowrap px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <QuietText
+                        value={deal.askAmount == null ? "" : moneyDraft(deal.askAmount)}
+                        display={<span className="num text-sm font-bold text-paper-900">{money(deal.askAmount)}</span>}
+                        className="num text-sm font-bold text-paper-900"
+                        commit={(raw) => {
+                          const next = parseMoneyInput(raw);
+                          if (next === undefined) return false;
+                          if (next !== deal.askAmount) patchDeal.mutate({ id: deal.id, patch: { askAmount: next } });
+                        }}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <SyndicateCell
+                        deal={deal}
+                        onChange={(patch) => patchDeal.mutate({ id: deal.id, patch })}
+                      />
                     </td>
                     <td className="num hidden px-3 py-3 text-[13px] font-semibold text-paper-700 md:table-cell">
                       {deal.upvoters?.length ? deal.upvoters.length : "—"}
@@ -783,16 +720,29 @@ export default function Pipeline() {
                         <span className="text-paper-400">—</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {stage && (
-                        <span className="inline-flex items-center gap-2 text-[13px] font-medium text-paper-700">
-                          <span className="h-2 w-2 rounded-full" style={{ background: stage.color }} />
-                          {stage.name}
-                        </span>
-                      )}
+                    <td className="whitespace-nowrap px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <StageCell
+                        stage={stage}
+                        stages={pipeline?.stages ?? []}
+                        onChange={(stageId) => {
+                          if (stageId !== deal.stageId) patchDeal.mutate({ id: deal.id, patch: { stageId } });
+                        }}
+                      />
                     </td>
                     <td className="hidden px-3 py-3 sm:table-cell"><SourceTag source={deal.source} /></td>
                     <td className="num whitespace-nowrap px-3 py-3 text-xs font-medium text-paper-400">{timeAgo(deal.updatedAt)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <button
+                        type="button"
+                        className="text-[12px] font-semibold text-red-700 hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          askDelete(deal);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -805,7 +755,341 @@ export default function Pipeline() {
   );
 }
 
-function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
+type DealPatch = {
+  stageId?: string;
+  roundLabel?: string | null;
+  askAmount?: number | null;
+  firmInvested?: boolean | null;
+  syndicateStatus?: "queued" | "presented" | null;
+};
+
+function moneyDraft(n: number): string {
+  const compact = money(n);
+  return parseMoneyInput(compact) === n ? compact : `$${n.toLocaleString("en-US")}`;
+}
+
+function parseMoneyInput(raw: string): number | null | undefined {
+  const t = raw.trim();
+  if (!t || t === "—" || t === "-" || /^n\/?a$/i.test(t)) return null;
+  const m = t.replace(/[$,\s]/g, "").match(/^(\d+(?:\.\d+)?)([kmb])?$/i);
+  if (!m?.[1]) return undefined;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return undefined;
+  const mult = m[2] ? { k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()] ?? 1 : 1;
+  return n * mult;
+}
+
+/** Reads as table text. Click reveals a caret in the same type, not a form field. */
+function QuietText({
+  value,
+  display,
+  className,
+  fill,
+  commit,
+}: {
+  value: string;
+  display?: ReactNode;
+  className?: string;
+  /** Stretch to the cell so wrapped text can clamp. */
+  fill?: boolean;
+  commit: (raw: string) => boolean | void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+  const cancelRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
+
+  const finish = () => {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      setInvalid(false);
+      setDraft(value);
+      return;
+    }
+    const ok = commit(draft);
+    if (ok === false) {
+      setInvalid(true);
+      inputRef.current?.focus();
+      return;
+    }
+    setInvalid(false);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className={cx(
+          fill ? "block w-full" : "inline-block max-w-full",
+          "rounded-sm px-1 py-0.5 -mx-1 text-left outline-none transition-colors hover:bg-paper-900/[0.045] focus-visible:bg-paper-900/[0.045]",
+          !display && !value && "text-paper-400",
+          className,
+        )}
+      >
+        {display ?? (value || "—")}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      aria-invalid={invalid || undefined}
+      placeholder="—"
+      spellCheck={false}
+      autoComplete="off"
+      onChange={(e) => {
+        setDraft(e.target.value);
+        setInvalid(false);
+      }}
+      onBlur={finish}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelRef.current = true;
+          setEditing(false);
+        }
+      }}
+      style={{ width: `${Math.min(36, Math.max(4, draft.length + 1))}ch` }}
+      className={cx(
+        "max-w-full bg-transparent px-1 py-0.5 -mx-1 font-[inherit] text-inherit outline-none ring-0 placeholder:text-paper-300",
+        invalid && "decoration-red-500 underline decoration-1 underline-offset-4",
+        className,
+      )}
+    />
+  );
+}
+
+function QuietMenu({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const place = () => {
+      const r = btnRef.current!.getBoundingClientRect();
+      const width = menuRef.current?.offsetWidth ?? 200;
+      const height = menuRef.current?.offsetHeight ?? 180;
+      const left = Math.min(r.left, window.innerWidth - width - 8);
+      const below = r.bottom + 6;
+      const top = below + height > window.innerHeight - 8 ? Math.max(8, r.top - height - 6) : below;
+      setPos({ top, left: Math.max(8, left) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          const r = btnRef.current?.getBoundingClientRect();
+          if (r) setPos({ top: r.bottom + 6, left: r.left });
+          setOpen((v) => !v);
+        }}
+        className="rounded-md px-1 py-0.5 -mx-1 text-left outline-none transition-colors hover:bg-paper-900/[0.045] focus-visible:bg-paper-900/[0.045]"
+      >
+        {label}
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: pos?.top ?? -9999, left: pos?.left ?? 0 }}
+            className="fixed z-50 max-h-[min(320px,70vh)] min-w-[168px] overflow-auto rounded-lg bg-white p-1 shadow-[0_12px_32px_-12px_rgba(23,22,19,0.35)] ring-1 ring-paper-900/[0.08]"
+          >
+            {children(() => setOpen(false))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function MenuRow({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cx(
+        "flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-[13px] text-paper-800",
+        active ? "bg-paper-100" : "hover:bg-paper-100",
+      )}
+    >
+      <span className="min-w-0">{children}</span>
+      {active && <span className="text-[11px] text-paper-400">✓</span>}
+    </button>
+  );
+}
+
+function SyndicateCell({
+  deal,
+  onChange,
+}: {
+  deal: Deal;
+  onChange: (patch: DealPatch) => void;
+}) {
+  return (
+    <QuietMenu
+      label={
+        <span className="flex items-center gap-1">
+          {deal.syndicateStatus ? (
+            <Badge tone={deal.syndicateStatus === "presented" ? "green" : "amber"}>
+              {deal.syndicateStatus === "presented" ? "Presented" : "In queue"}
+            </Badge>
+          ) : (
+            <span className="text-[13px] text-paper-400">—</span>
+          )}
+          {deal.firmInvested && <Badge tone="indigo">Invested</Badge>}
+        </span>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuRow
+            active={deal.syndicateStatus === "queued"}
+            onClick={() => {
+              onChange({ syndicateStatus: "queued" });
+              close();
+            }}
+          >
+            In queue
+          </MenuRow>
+          <MenuRow
+            active={deal.syndicateStatus === "presented"}
+            onClick={() => {
+              onChange({ syndicateStatus: "presented" });
+              close();
+            }}
+          >
+            Presented
+          </MenuRow>
+          <MenuRow
+            active={!deal.syndicateStatus}
+            onClick={() => {
+              onChange({ syndicateStatus: null });
+              close();
+            }}
+          >
+            Not marked
+          </MenuRow>
+          <div className="my-1 h-px bg-paper-900/[0.08]" />
+          <MenuRow active={deal.firmInvested === true} onClick={() => onChange({ firmInvested: deal.firmInvested === true ? null : true })}>
+            Invested
+          </MenuRow>
+        </>
+      )}
+    </QuietMenu>
+  );
+}
+
+function StageCell({
+  stage,
+  stages,
+  onChange,
+}: {
+  stage: Stage | undefined;
+  stages: Stage[];
+  onChange: (stageId: string) => void;
+}) {
+  return (
+    <QuietMenu
+      label={
+        stage ? (
+          <span className="inline-flex items-center gap-2 text-[13px] font-medium text-paper-700">
+            <span className="h-2 w-2 rounded-full" style={{ background: stage.color }} />
+            {stage.name}
+          </span>
+        ) : (
+          <span className="text-[13px] text-paper-400">—</span>
+        )
+      }
+    >
+      {(close) =>
+        stages.map((s) => (
+          <MenuRow
+            key={s.id}
+            active={s.id === stage?.id}
+            onClick={() => {
+              onChange(s.id);
+              close();
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+              {s.name}
+            </span>
+          </MenuRow>
+        ))
+      }
+    </QuietMenu>
+  );
+}
+
+function Th({ children, className }: { children?: ReactNode; className?: string }) {
   return (
     <th className={cx("whitespace-nowrap px-3 py-2.5", className)}>
       {children}
