@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
@@ -160,6 +160,14 @@ export default function CompanyDetail() {
     queryKey: ["contacts", id],
     queryFn: () => api.get<Contact[]>(`/companies/${id}/contacts`),
     enabled: !!id,
+  });
+
+  const saveSyndicate = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => api.patch(`/deals/${id}`, patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["company", id] });
+      void qc.invalidateQueries({ queryKey: ["deals"] });
+    },
   });
 
   const moveStage = useMutation({
@@ -330,9 +338,12 @@ export default function CompanyDetail() {
         <p className="mt-4 max-w-2xl text-[13px] leading-relaxed text-paper-600">{c.description}</p>
       )}
 
-      {(c.submittedBy || (c.upvoters?.length ?? 0) > 0 || c.roundLabel) && (
-        <SyndicatePanel company={c} />
-      )}
+      <SyndicatePanel
+        company={c}
+        saving={saveSyndicate.isPending}
+        error={saveSyndicate.error instanceof Error ? saveSyndicate.error.message : null}
+        onPatch={(patch) => saveSyndicate.mutate(patch)}
+      />
 
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_300px]">
         <div className="space-y-5">
@@ -568,70 +579,255 @@ export default function CompanyDetail() {
   );
 }
 
-function SyndicatePanel({ company }: { company: Company }) {
-  const votes = company.upvoters ?? [];
+interface PersonDraft {
+  key: string;
+  name: string;
+  firm: string;
+  email: string;
+  occurredAt: string | null;
+}
+
+function personFrom(p: Participant | null | undefined, fallbackKey: string): PersonDraft {
+  return {
+    key: p?.id ?? fallbackKey,
+    name: p?.name ?? "",
+    firm: p?.firm ?? "",
+    email: p?.email ?? "",
+    occurredAt: p?.occurredAt ?? null,
+  };
+}
+
+function personPayload(draft: PersonDraft): { error: string } | { value: { name: string; firm: string | null; email: string | null; occurredAt?: string } } | null {
+  const name = draft.name.trim();
+  const firm = draft.firm.trim();
+  const email = draft.email.trim();
+  if (!name && !firm && !email) return null;
+  if (!name) return { error: "Name is required." };
+  if (email && !email.includes("@")) return { error: "Enter a valid email or leave it blank." };
+  return {
+    value: {
+      name,
+      firm: firm || null,
+      email: email || null,
+      ...(draft.occurredAt ? { occurredAt: draft.occurredAt } : {}),
+    },
+  };
+}
+
+function SyndicatePanel({
+  company,
+  saving,
+  error,
+  onPatch,
+}: {
+  company: Company;
+  saving: boolean;
+  error: string | null;
+  onPatch: (patch: Record<string, unknown>) => void;
+}) {
+  const [roundLabel, setRoundLabel] = useState(company.roundLabel ?? "");
+  const [status, setStatus] = useState(company.syndicateStatus ?? "");
+  const [invested, setInvested] = useState(company.firmInvested == null ? "" : company.firmInvested ? "true" : "false");
+  const [submitter, setSubmitter] = useState<PersonDraft>(() => personFrom(company.submittedBy, "submitter"));
+  const [votes, setVotes] = useState<PersonDraft[]>(() => (company.upvoters ?? []).map((v) => personFrom(v, v.id)));
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRoundLabel(company.roundLabel ?? "");
+    setStatus(company.syndicateStatus ?? "");
+    setInvested(company.firmInvested == null ? "" : company.firmInvested ? "true" : "false");
+    setSubmitter(personFrom(company.submittedBy, "submitter"));
+    setVotes((company.upvoters ?? []).map((v) => personFrom(v, v.id)));
+  }, [company]);
+
+  const saveRound = () => {
+    setLocalError(null);
+    onPatch({
+      roundLabel: roundLabel.trim() || null,
+      syndicateStatus: status || null,
+      firmInvested: invested === "" ? null : invested === "true",
+    });
+  };
+
+  const saveSubmitter = () => {
+    const parsed = personPayload(submitter);
+    if (parsed && "error" in parsed) {
+      setLocalError(parsed.error);
+      return;
+    }
+    setLocalError(null);
+    onPatch({ submittedBy: parsed?.value ?? null });
+  };
+
+  const saveVotes = () => {
+    const next = [];
+    for (const vote of votes) {
+      const parsed = personPayload(vote);
+      if (parsed && "error" in parsed) {
+        setLocalError(parsed.error);
+        return;
+      }
+      if (parsed?.value) next.push(parsed.value);
+    }
+    setLocalError(null);
+    onPatch({ upvoters: next });
+  };
+
   return (
     <section className="mt-4 overflow-hidden rounded-2xl border border-paper-900/[0.08] bg-white">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-paper-900/[0.06] px-5 py-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Syndicate</p>
-          <p className="mt-1 font-serif text-[18px] font-semibold tracking-tight text-paper-900">
-            {company.roundLabel || company.roundStage || "Round not specified"}
-          </p>
+          <label className="mt-2 block text-[11px] font-medium text-paper-500">
+            Round as written
+            <input
+              value={roundLabel}
+              onChange={(e) => setRoundLabel(e.target.value)}
+              placeholder="$6M Seed"
+              className={cx(inputCls, "mt-1")}
+            />
+          </label>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {company.syndicateStatus && (
-            <Badge tone={company.syndicateStatus === "presented" ? "green" : "amber"}>{company.syndicateStatus}</Badge>
-          )}
-          {company.firmInvested === true && <Badge tone="indigo">A member firm invested</Badge>}
-          {company.firmInvested === false && <Badge tone="slate">No firm invested</Badge>}
-          {votes.length > 0 && <Badge tone="slate">{votes.length} vote{votes.length === 1 ? "" : "s"}</Badge>}
+          <Choice
+            label="Status"
+            value={status}
+            onChange={setStatus}
+            options={[
+              ["", "None"],
+              ["queued", "Queued"],
+              ["presented", "Presented"],
+            ]}
+          />
+          <Choice
+            label="Firm invested"
+            value={invested}
+            onChange={setInvested}
+            options={[
+              ["", "Unknown"],
+              ["false", "No"],
+              ["true", "Yes"],
+            ]}
+          />
+          <Button size="sm" variant="outline" disabled={saving} onClick={saveRound}>
+            Save round
+          </Button>
         </div>
       </div>
-      <div className="grid gap-0 lg:grid-cols-[240px_1fr]">
+      <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
         <div className="border-b border-paper-900/[0.06] px-5 py-4 lg:border-b-0 lg:border-r">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Submitted by</p>
-          {company.submittedBy ? (
-            <div className="mt-2.5 flex items-start gap-2.5">
-              <Avatar name={company.submittedBy.name} size={32} />
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-semibold text-paper-900">{company.submittedBy.name}</p>
-                {company.submittedBy.firm && <p className="truncate text-xs text-paper-500">{company.submittedBy.firm}</p>}
-                {company.submittedBy.email && (
-                  <a href={`mailto:${company.submittedBy.email}`} className="truncate text-xs text-brand-700 hover:underline">
-                    {company.submittedBy.email}
-                  </a>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="mt-2 text-[13px] text-paper-400">Unknown</p>
-          )}
+          <PersonFields draft={submitter} onChange={setSubmitter} />
+          <Button size="sm" variant="outline" className="mt-2" disabled={saving} onClick={saveSubmitter}>
+            Save submitter
+          </Button>
         </div>
         <div className="px-5 py-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Upvotes</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-paper-400">Upvotes</p>
+            <button
+              type="button"
+              className="text-[12px] font-semibold text-brand-700 hover:underline"
+              onClick={() =>
+                setVotes((prev) => [...prev, { key: `new-${Date.now()}`, name: "", firm: "", email: "", occurredAt: null }])
+              }
+            >
+              Add vote
+            </button>
+          </div>
           {votes.length === 0 ? (
             <p className="mt-2 text-[13px] text-paper-400">No votes yet</p>
           ) : (
-            <ul className="mt-2 divide-y divide-paper-900/[0.05]">
-              {votes.map((v) => (
-                <li key={v.id} className="flex items-center gap-2.5 py-2">
-                  <Avatar name={v.name} size={26} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-paper-900">
-                      {v.name}
-                      {v.firm ? <span className="font-normal text-paper-500"> · {v.firm}</span> : null}
-                    </p>
-                    {v.email && <p className="truncate text-[11px] text-paper-400">{v.email}</p>}
+            <ul className="mt-2 space-y-3">
+              {votes.map((vote) => (
+                <li key={vote.key} className="rounded-lg border border-paper-900/[0.06] px-3 py-2">
+                  <PersonFields
+                    draft={vote}
+                    onChange={(next) => setVotes((prev) => prev.map((v) => (v.key === vote.key ? next : v)))}
+                  />
+                  <div className="mt-1 flex items-center justify-between">
+                    {vote.occurredAt ? (
+                      <span className="text-[11px] text-paper-400">{timeAgo(vote.occurredAt)}</span>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      type="button"
+                      className="text-[12px] font-medium text-red-600 hover:underline"
+                      onClick={() => setVotes((prev) => prev.filter((v) => v.key !== vote.key))}
+                    >
+                      Remove
+                    </button>
                   </div>
-                  {v.occurredAt && <span className="shrink-0 text-[11px] text-paper-400">{timeAgo(v.occurredAt)}</span>}
                 </li>
               ))}
             </ul>
           )}
+          <Button size="sm" variant="outline" className="mt-3" disabled={saving} onClick={saveVotes}>
+            Save votes
+          </Button>
         </div>
       </div>
+      {(localError || error) && <p className="border-t border-red-100 bg-red-50 px-5 py-2 text-[12px] text-red-700">{localError || error}</p>}
     </section>
+  );
+}
+
+function PersonFields({ draft, onChange }: { draft: PersonDraft; onChange: (next: PersonDraft) => void }) {
+  return (
+    <div className="mt-2 grid gap-1.5">
+      <input
+        value={draft.name}
+        onChange={(e) => onChange({ ...draft, name: e.target.value })}
+        placeholder="Name"
+        aria-label="Name"
+        className={inputCls}
+      />
+      <input
+        value={draft.firm}
+        onChange={(e) => onChange({ ...draft, firm: e.target.value })}
+        placeholder="Firm"
+        aria-label="Firm"
+        className={inputCls}
+      />
+      <input
+        value={draft.email}
+        onChange={(e) => onChange({ ...draft, email: e.target.value })}
+        placeholder="Email"
+        aria-label="Email"
+        className={inputCls}
+      />
+    </div>
+  );
+}
+
+function Choice({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<[string, string]>;
+}) {
+  return (
+    <label className="text-[11px] font-medium text-paper-500">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className={cx(inputCls, "mt-1 h-8")}
+      >
+        {options.map(([v, text]) => (
+          <option key={v || "empty"} value={v}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

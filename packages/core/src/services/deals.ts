@@ -271,6 +271,16 @@ export async function updateDeal(
       pipelineId = stage.pipelineId;
     }
 
+    const reparseRound =
+      patch.roundLabel !== undefined &&
+      askAmount === undefined &&
+      valuation === undefined &&
+      patch.roundStage === undefined;
+    const parsedRound = reparseRound ? parseRoundLabel(patch.roundLabel) : null;
+    const nextAsk = parsedRound ? parsedRound.askAmount : askAmount;
+    const nextValuation = parsedRound ? parsedRound.valuation : valuation;
+    const nextStage = parsedRound ? parsedRound.roundStage : patch.roundStage;
+
     const [row] = await tx
       .update(companies)
       .set({
@@ -278,9 +288,9 @@ export async function updateDeal(
         ...(stageId ? { stageId, ...(pipelineId ? { pipelineId } : {}) } : {}),
         ...(ownerUserId !== undefined ? { ownerUserId } : {}),
         ...(position ? { position } : {}),
-        ...(askAmount !== undefined ? { askAmount: askAmount === null ? null : String(askAmount) } : {}),
-        ...(valuation !== undefined ? { valuation: valuation === null ? null : String(valuation) } : {}),
-        ...(patch.roundStage !== undefined ? { roundStage: patch.roundStage } : {}),
+        ...(nextAsk !== undefined ? { askAmount: nextAsk === null ? null : String(nextAsk) } : {}),
+        ...(nextValuation !== undefined ? { valuation: nextValuation === null ? null : String(nextValuation) } : {}),
+        ...(nextStage !== undefined ? { roundStage: nextStage } : {}),
         ...(patch.roundLabel !== undefined ? { roundLabel: patch.roundLabel } : {}),
         ...(patch.firmInvested !== undefined ? { firmInvested: patch.firmInvested } : {}),
         ...(patch.syndicateStatus !== undefined ? { syndicateStatus: patch.syndicateStatus } : {}),
