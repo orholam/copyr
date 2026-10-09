@@ -1170,39 +1170,38 @@ function MemoView({ text }: { text: string }) {
   return (
     <div className="space-y-3 text-[14px] leading-relaxed text-paper-800">
       {memoBlocks(text).map((block, i) => {
-        if (block.kind === "h1") {
-          return (
-            <h2 key={i} className="font-serif text-[22px] font-semibold tracking-tight text-paper-900">
-              {inlineMemo(block.text)}
-            </h2>
-          );
+        switch (block.kind) {
+          case "h1":
+            return (
+              <h2 key={i} className="font-serif text-[22px] font-semibold tracking-tight text-paper-900">
+                {inlineMemo(block.text)}
+              </h2>
+            );
+          case "h2":
+            return (
+              <h3 key={i} className="pt-1 text-[12px] font-bold uppercase tracking-[0.07em] text-paper-500">
+                {inlineMemo(block.text)}
+              </h3>
+            );
+          case "ul":
+            return (
+              <ul key={i} className="list-disc space-y-1 pl-5">
+                {block.items.map((item, j) => (
+                  <li key={j}>{inlineMemo(item)}</li>
+                ))}
+              </ul>
+            );
+          case "ol":
+            return (
+              <ol key={i} className="list-decimal space-y-1 pl-5">
+                {block.items.map((item, j) => (
+                  <li key={j}>{inlineMemo(item)}</li>
+                ))}
+              </ol>
+            );
+          case "p":
+            return <p key={i}>{inlineMemo(block.text)}</p>;
         }
-        if (block.kind === "h2") {
-          return (
-            <h3 key={i} className="pt-1 text-[12px] font-bold uppercase tracking-[0.07em] text-paper-500">
-              {inlineMemo(block.text)}
-            </h3>
-          );
-        }
-        if (block.kind === "ul") {
-          return (
-            <ul key={i} className="list-disc space-y-1 pl-5">
-              {block.items.map((item, j) => (
-                <li key={j}>{inlineMemo(item)}</li>
-              ))}
-            </ul>
-          );
-        }
-        if (block.kind === "ol") {
-          return (
-            <ol key={i} className="list-decimal space-y-1 pl-5">
-              {block.items.map((item, j) => (
-                <li key={j}>{inlineMemo(item)}</li>
-              ))}
-            </ol>
-          );
-        }
-        return <p key={i}>{inlineMemo(block.text)}</p>;
       })}
     </div>
   );
