@@ -781,7 +781,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "analytics_overview",
-    "Firm KPIs: active deals, pipeline $, new founders, conversion rate, stage breakdown, weekly ingestion trend",
+    "Firm KPIs plus stage, sector, source, round, and owner breakdowns, ask size, and the largest deals",
     {},
     tool(async () => core.analytics.analyticsOverview(core.ctx, requireSession())),
   );

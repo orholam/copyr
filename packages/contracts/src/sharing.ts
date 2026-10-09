@@ -113,11 +113,33 @@ export const analyticsOverviewSchema = z.object({
   newFoundersDeltaPct: z.number(),
   conversionRatePct: z.number(),
   conversionDeltaPct: z.number(),
+  openDeals: z.number().int(),
+  wonDeals: z.number().int(),
+  lostDeals: z.number().int(),
+  avgAskUsd: z.number(),
+  medianAskUsd: z.number(),
   byStage: z.array(
     z.object({ stageId: idSchema, stageName: z.string(), color: z.string(), count: z.number().int(), usd: z.number() }),
   ),
   weeklyIngestion: z.array(
-    z.object({ weekStart: z.string(), deals: z.number().int() }),
+    z.object({ weekStart: z.string(), deals: z.number().int(), usd: z.number() }),
+  ),
+  bySector: z.array(z.object({ name: z.string(), count: z.number().int(), usd: z.number() })),
+  bySource: z.array(z.object({ source: z.string(), count: z.number().int(), usd: z.number() })),
+  byRound: z.array(z.object({ round: z.string(), count: z.number().int(), usd: z.number() })),
+  byOwner: z.array(
+    z.object({ ownerId: idSchema.nullable(), name: z.string(), count: z.number().int(), usd: z.number() }),
+  ),
+  largestDeals: z.array(
+    z.object({
+      id: idSchema,
+      name: z.string(),
+      sector: z.string().nullable(),
+      roundStage: z.string().nullable(),
+      askAmount: z.number().nullable(),
+      stageName: z.string(),
+      stageColor: z.string(),
+    }),
   ),
 });
 export type AnalyticsOverview = z.infer<typeof analyticsOverviewSchema>;

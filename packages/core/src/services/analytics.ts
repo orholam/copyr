@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { companies, conversations, stages } from "@copyr/db/schema.js";
+import { companies, conversations, stages, users } from "@copyr/db/schema.js";
 import type { AnalyticsOverview } from "@copyr/contracts";
 import type { CoreContext, Session } from "../context.js";
 
@@ -76,6 +76,8 @@ export async function analyticsOverview(
   const lostIds = stageRows.filter((s) => s.kind === "lost").map((s) => s.id);
   let conversionRate = 0;
   let conversionDelta = 0;
+  let wonTotal = 0;
+  let lostTotal = 0;
   if (wonIds.length || lostIds.length) {
     const [wonCount] = await ctx.db
       .select({ count: sql<number>`count(*)::int` })
@@ -95,8 +97,10 @@ export async function analyticsOverview(
           lostIds.length ? inArray(companies.stageId, lostIds) : sql`false`,
         ),
       );
-    const closedTotal = wonCount.count + lostCount.count;
-    conversionRate = closedTotal === 0 ? 0 : Math.round((wonCount.count / closedTotal) * 100);
+    wonTotal = wonCount.count;
+    lostTotal = lostCount.count;
+    const closedTotal = wonTotal + lostTotal;
+    conversionRate = closedTotal === 0 ? 0 : Math.round((wonTotal / closedTotal) * 100);
 
     // prior-window conversion for the delta chip
     const [wonPrev] = await ctx.db
@@ -143,11 +147,103 @@ export async function analyticsOverview(
     .groupBy(stages.id, stages.name, stages.color, stages.position)
     .orderBy(asc(stages.position));
 
+  const activeStageIds = stageRows.filter((s) => s.kind === "active").map((s) => s.id);
+  const [openCount] = await ctx.db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.workspaceId, ws),
+        isNull(companies.archivedAt),
+        activeStageIds.length ? inArray(companies.stageId, activeStageIds) : sql`false`,
+      ),
+    );
+
+  const [asks] = await ctx.db
+    .select({
+      avg: sql<number | null>`avg(${companies.askAmount})::float8`,
+      median: sql<number | null>`percentile_cont(0.5) within group (order by ${companies.askAmount}::float8)`,
+    })
+    .from(companies)
+    .where(
+      and(
+        eq(companies.workspaceId, ws),
+        isNull(companies.archivedAt),
+        sql`${companies.askAmount} is not null`,
+      ),
+    );
+
+  const bySectorRows = await ctx.db
+    .select({
+      name: sql<string>`coalesce(nullif(${companies.sector}, ''), 'Unspecified')`,
+      count: sql<number>`count(*)::int`,
+      usd: sql<number>`coalesce(sum(${companies.askAmount}), 0)::float8`,
+    })
+    .from(companies)
+    .where(and(eq(companies.workspaceId, ws), isNull(companies.archivedAt)))
+    .groupBy(sql`coalesce(nullif(${companies.sector}, ''), 'Unspecified')`)
+    .orderBy(desc(sql`count(*)`))
+    .limit(8);
+
+  const bySourceRows = await ctx.db
+    .select({
+      source: companies.source,
+      count: sql<number>`count(*)::int`,
+      usd: sql<number>`coalesce(sum(${companies.askAmount}), 0)::float8`,
+    })
+    .from(companies)
+    .where(and(eq(companies.workspaceId, ws), isNull(companies.archivedAt)))
+    .groupBy(companies.source)
+    .orderBy(desc(sql`count(*)`));
+
+  const byRoundRows = await ctx.db
+    .select({
+      round: sql<string>`coalesce(nullif(${companies.roundStage}, ''), 'Unspecified')`,
+      count: sql<number>`count(*)::int`,
+      usd: sql<number>`coalesce(sum(${companies.askAmount}), 0)::float8`,
+    })
+    .from(companies)
+    .where(and(eq(companies.workspaceId, ws), isNull(companies.archivedAt)))
+    .groupBy(sql`coalesce(nullif(${companies.roundStage}, ''), 'Unspecified')`)
+    .orderBy(desc(sql`sum(${companies.askAmount})`))
+    .limit(8);
+
+  const byOwnerRows = await ctx.db
+    .select({
+      ownerId: companies.ownerUserId,
+      name: sql<string>`coalesce(${users.name}, 'Unassigned')`,
+      count: sql<number>`count(*)::int`,
+      usd: sql<number>`coalesce(sum(${companies.askAmount}), 0)::float8`,
+    })
+    .from(companies)
+    .leftJoin(users, eq(companies.ownerUserId, users.id))
+    .where(and(eq(companies.workspaceId, ws), isNull(companies.archivedAt)))
+    .groupBy(companies.ownerUserId, users.name)
+    .orderBy(desc(sql`count(*)`))
+    .limit(8);
+
+  const largestRows = await ctx.db
+    .select({
+      id: companies.id,
+      name: companies.name,
+      sector: companies.sector,
+      roundStage: companies.roundStage,
+      askAmount: companies.askAmount,
+      stageName: stages.name,
+      stageColor: stages.color,
+    })
+    .from(companies)
+    .innerJoin(stages, eq(companies.stageId, stages.id))
+    .where(and(eq(companies.workspaceId, ws), isNull(companies.archivedAt)))
+    .orderBy(sql`${companies.askAmount} desc nulls last`)
+    .limit(8);
+
   // weekly ingestion trend (last 8 weeks)
   const weeklyRows = await ctx.db
     .select({
       weekStart: sql<string>`date_trunc('week', ${companies.createdAt})::date::text`,
       deals: sql<number>`count(*)::int`,
+      usd: sql<number>`coalesce(sum(${companies.askAmount}), 0)::float8`,
     })
     .from(companies)
     .where(
@@ -168,6 +264,11 @@ export async function analyticsOverview(
     newFoundersDeltaPct: pct(foundersNow?.count ?? 0, foundersPrev?.count ?? 0),
     conversionRatePct: conversionRate,
     conversionDeltaPct: conversionDelta,
+    openDeals: openCount?.count ?? 0,
+    wonDeals: wonTotal,
+    lostDeals: lostTotal,
+    avgAskUsd: Number(asks?.avg ?? 0),
+    medianAskUsd: Number(asks?.median ?? 0),
     byStage: byStageRows.map((r) => ({
       stageId: r.stageId,
       stageName: r.stageName,
@@ -175,7 +276,25 @@ export async function analyticsOverview(
       count: r.count,
       usd: r.usd ?? 0,
     })),
-    weeklyIngestion: weeklyRows,
+    weeklyIngestion: weeklyRows.map((r) => ({ ...r, usd: r.usd ?? 0 })),
+    bySector: bySectorRows.map((r) => ({ name: r.name, count: r.count, usd: r.usd ?? 0 })),
+    bySource: bySourceRows.map((r) => ({ source: r.source, count: r.count, usd: r.usd ?? 0 })),
+    byRound: byRoundRows.map((r) => ({ round: r.round, count: r.count, usd: r.usd ?? 0 })),
+    byOwner: byOwnerRows.map((r) => ({
+      ownerId: r.ownerId,
+      name: r.name,
+      count: r.count,
+      usd: r.usd ?? 0,
+    })),
+    largestDeals: largestRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      sector: r.sector,
+      roundStage: r.roundStage,
+      askAmount: r.askAmount === null ? null : Number(r.askAmount),
+      stageName: r.stageName,
+      stageColor: r.stageColor,
+    })),
   };
 }
 
