@@ -118,8 +118,9 @@ export async function listActivity(
   const where = and(...conds);
 
   const rows = await ctx.db
-    .select()
+    .select({ activity: activities, actorName: users.name })
     .from(activities)
+    .leftJoin(users, eq(users.id, activities.actorUserId))
     .where(where)
     .orderBy(desc(activities.createdAt))
     .limit(filter.limit ?? 50)
@@ -128,7 +129,7 @@ export async function listActivity(
     .select({ total: sql<number>`count(*)::int` })
     .from(activities)
     .where(where);
-  return { items: rows.map(mapActivity), total };
+  return { items: rows.map((row) => mapActivity(row.activity, row.actorName)), total };
 }
 
 export async function updateThesisMemo(

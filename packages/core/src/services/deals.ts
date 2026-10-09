@@ -12,7 +12,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { companies, stages } from "@copyr/db/schema.js";
+import { companies, stages, users } from "@copyr/db/schema.js";
 import type {
   CreateDealInput,
   DealDto,
@@ -326,6 +326,24 @@ export async function updateDeal(
       );
     }
 
+    if (ownerUserId !== undefined && ownerUserId !== row0.ownerUserId) {
+      let assignee = "Unassigned";
+      if (ownerUserId) {
+        const [person] = await tx.select({ name: users.name }).from(users).where(eq(users.id, ownerUserId));
+        assignee = person?.name?.trim() || "a teammate";
+      }
+      await logActivity(ctx, tx, {
+        workspaceId: session.workspaceId,
+        entityType: "deal",
+        entityId: dealId,
+        companyId: row.id,
+        dealId,
+        type: "deal.updated",
+        summary: ownerUserId ? `Assigned "${row.name}" to ${assignee}` : `Cleared the assignee on "${row.name}"`,
+        actor: session.actor.userId ? "user" : "system",
+        actorUserId: session.actor.userId,
+      });
+    }
     if (stageChangedStageName) {
       await logActivity(ctx, tx, {
         workspaceId: session.workspaceId,

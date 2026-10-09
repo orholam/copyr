@@ -238,7 +238,7 @@ export function mapNote(row: NoteRow, authorName?: string | null): NoteDto {
   };
 }
 
-export function mapActivity(row: ActivityRow): ActivityDto {
+export function mapActivity(row: ActivityRow, actorName?: string | null): ActivityDto {
   return {
     id: row.id,
     entityType: row.entityType,
@@ -248,6 +248,7 @@ export function mapActivity(row: ActivityRow): ActivityDto {
     type: row.type,
     actor: row.actor,
     actorUserId: row.actorUserId,
+    actorName: actorName ?? null,
     summary: row.summary,
     data: (row.data as Record<string, unknown>) ?? null,
     createdAt: toIso(row.createdAt)!,

@@ -286,7 +286,9 @@ describe("mapActivity", () => {
   it("normalizes missing jsonb payload to null", () => {
     const dto = mapActivity(activityRow);
     expect(dto.data).toBeNull();
+    expect(dto.actorName).toBeNull();
     expect(dto.summary).toBe("Pitch submitted via intake form");
+    expect(mapActivity(activityRow, "Josiah").actorName).toBe("Josiah");
   });
 
   it("keeps structured payloads intact", () => {

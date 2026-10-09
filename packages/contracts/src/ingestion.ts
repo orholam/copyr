@@ -165,6 +165,7 @@ export const activityDto = z.object({
   type: z.string(),
   actor: z.enum(["user", "ai", "system"]),
   actorUserId: idSchema.nullable(),
+  actorName: z.string().nullable(),
   summary: z.string(),
   data: z.record(z.string(), z.unknown()).nullable(),
   createdAt: z.string(),

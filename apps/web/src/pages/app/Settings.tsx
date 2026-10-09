@@ -382,13 +382,27 @@ function IntegrationCard({
 
 /* ── workspace audit log ──────────────────────────────────────────── */
 
+function auditLine(a: { actor: string; actorName: string | null; summary: string }): string {
+  const created = a.summary.match(/^Company "(.+)" created$/);
+  if (a.actor === "user" && a.actorName && created) return `${a.actorName} created the ${created[1]} deal`;
+  if (a.actor === "user" && a.actorName) return `${a.actorName} · ${a.summary}`;
+  return a.summary;
+}
+
 function AuditLog() {
   const q = useQuery({
     queryKey: ["audit-log"],
     queryFn: () =>
-      api.get<{ items: Array<{ id: string; type: string; summary: string; actor: string; createdAt: string }> }>(
-        "/activity?limit=200",
-      ),
+      api.get<{
+        items: Array<{
+          id: string;
+          type: string;
+          summary: string;
+          actor: string;
+          actorName: string | null;
+          createdAt: string;
+        }>;
+      }>("/activity?limit=200"),
     refetchInterval: 15_000,
   });
   return (
@@ -400,7 +414,7 @@ function AuditLog() {
           <li key={a.id} className="flex items-center justify-between py-2 text-[13px]">
             <span className="flex items-center gap-2">
               <span>{a.actor === "ai" ? "🤖" : a.actor === "user" ? "👤" : "⚙️"}</span>
-              <span className="text-paper-800">{a.summary}</span>
+              <span className="text-paper-800">{auditLine(a)}</span>
             </span>
             <span className="shrink-0 text-[11px] text-paper-500">{new Date(a.createdAt).toLocaleString()}</span>
           </li>
