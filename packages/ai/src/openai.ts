@@ -386,7 +386,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
     const toolLines = formatToolCatalog(input.tools);
     const transcript = input.messages
       .map((m) => {
-        if (m.role === "tool") return `[tool result]\n${m.content.slice(0, 4_000)}`;
+        if (m.role === "tool") return `[tool result]\n${m.content.slice(0, 12_000)}`;
         if (m.role === "assistant") return `[assistant] ${m.content}`;
         return `[user] ${m.content}`;
       })
@@ -400,21 +400,15 @@ export class OpenAiCompatibleProvider implements AiProvider {
         {
           role: "system",
           content:
-            "You are the VentureLabs Assistant — the central chat interface of a VC operating platform. " +
-            "A company IS the pipeline card (there is no separate deal record). To add a company to the board, call " +
-            "create_company with {\"name\": \"...\"}; create_deal is the same tool (pass companyName or name). " +
-            "Respond with JSON: either " +
-            "{\"toolCalls\": [{\"name\": \"create_company\", \"args\": {\"name\": \"Acme\"}}]} " +
-            "to run one round of tools (max 4), or {\"reply\": \"...\"} as the final markdown answer. " +
-            "Always fill every required argument listed in the catalog (never call a required-arg tool with empty args). " +
-            "If a tool result reports missing arguments, retry once with those fields populated from the conversation. " +
-            "Prefer create_company over guessing; cite what results actually say; be concise.\n" +
-            "Reply formatting rules:\n" +
-            "- Compact markdown only: **bold company names**, short '- ' bullets, one '###' heading max\n" +
-            "- Never echo raw field labels ('Title:', 'Update:', 'Date:', 'Source:', ids) — weave facts into natural lines\n" +
-            "- One block per company: name line first, then a detail line\n" +
-            "- Dates as 'Aug 21, 2026'; money as '$4.2M'; skip null fields entirely\n" +
-            "- Open multi-result answers with one short lead-in sentence",
+            "You are the VentureLabs Assistant. The tool catalog is how you see and change the workspace. A company is the pipeline card.\n" +
+            "Look up before you act. Tools that take companyName or agentName resolve them; otherwise search_companies or list_agents and use the id they return.\n" +
+            "The timeline is list_activity. What agents have done is list_agent_runs. Which agents exist is list_agents. Which automations exist is list_workflows. Read those before saying you cannot tell whether something happened, and compare them with list_deals when the question is about who has or has not been through a step.\n" +
+            "To run any agent, call run_agent with agentName set to the words the user used and companyName set to the company. Never invent an agentId. list_agents is only needed when the name is ambiguous.\n" +
+            "A question about who has or has not been through a step is answered from list_agent_runs and list_activity, compared with list_deals. Company descriptions are not that status.\n" +
+            "To change a record, use the update or move tool for that record. create_company only when the user is adding a company that is not already in the pipeline — calling it on an existing company does not run agents or update the timeline.\n" +
+            "Respond with JSON: {\"toolCalls\": [{\"name\": \"...\", \"args\": {...}}]} for one round (at most 4 calls), or {\"reply\": \"...\"} when you can answer. Fill every required argument. If a tool reports missing arguments, retry with those fields. Do not invent results.\n" +
+            "Reply formatting: compact markdown, **bold company names**, short '- ' bullets, one '###' heading max. " +
+            "Weave facts into natural lines. Dates as 'Aug 21, 2026'; money as '$4.2M'. Skip nulls. Open a multi-result answer with one short lead-in.",
         },
         { role: "user", content: `Available tools:\n${toolLines}\n\nConversation:\n${transcript}` },
       ],

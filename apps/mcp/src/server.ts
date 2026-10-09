@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Core, Session } from "@copyr/core";
+import { matchAgent, type Core, type Session } from "@copyr/core";
 import {
   createDealSchema,
   createDealInputSchema,
@@ -36,12 +36,55 @@ import {
 import { requireSession } from "./session.js";
 
 const uuid = z.string().uuid();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string | undefined): value is string {
+  return !!value && UUID_RE.test(value.trim());
+}
 const fieldValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]);
 
 function entityId(args: { dealId?: string; companyId?: string }): string {
   const id = args.dealId ?? args.companyId;
   if (!id) throw new Error("dealId or companyId required");
   return id;
+}
+
+/** Resolve a company the caller named. A real id wins; anything else is a name. */
+async function companyIdFrom(
+  core: Core,
+  args: { companyId?: string; dealId?: string; companyName?: string; name?: string },
+): Promise<string | undefined> {
+  if (isUuid(args.companyId)) return args.companyId.trim();
+  if (isUuid(args.dealId)) return args.dealId.trim();
+  const name = (args.companyName ?? args.name ?? (!isUuid(args.companyId) ? args.companyId : undefined))?.trim();
+  if (!name) return undefined;
+  const match = await core.companies.findCompanyMatch(
+    core.ctx,
+    core.ctx.db,
+    requireSession().workspaceId,
+    name,
+    null,
+  );
+  if (!match) {
+    throw new Error(`No company named "${name}". search_companies lists who is in the pipeline.`);
+  }
+  return match.id;
+}
+
+/** Resolve an agent by id or by a name the user would say. Never invents an id. */
+async function agentIdFrom(core: Core, args: { agentId?: string; agentName?: string }): Promise<string> {
+  const list = await core.agents.listAgents(core.ctx, requireSession());
+  const catalog = list.map((agent) => `${agent.name} — ${agent.description ?? agent.kind}`).join("; ") || "(none)";
+  if (isUuid(args.agentId)) {
+    const byId = list.find((agent) => agent.id === args.agentId!.trim());
+    if (byId) return byId.id;
+    throw new Error(`No agent with that id. Agents here: ${catalog}.`);
+  }
+  const query = (args.agentName ?? args.agentId)?.trim();
+  if (!query) throw new Error(`agentName required. Agents here: ${catalog}.`);
+  const hit = matchAgent(query, list);
+  if (!hit) throw new Error(`No single agent matches "${query}". Agents here: ${catalog}. Pass agentName as one of those names.`);
+  return hit.id;
 }
 
 /** Wrap handlers so tool errors become readable tool results, never crashes. */
@@ -78,9 +121,12 @@ export function createCopyrMcpServer(core: Core): McpServer {
         "(6) MEMORY — remember/recall fund preferences that scope every answer. " +
         "(7) COMMAND CENTER — command_center_overview for adoption, benchmarking and recommendations.\n" +
         "Admin surfaces: API keys, intake forms, notification prefs, webhook subscriptions, share links — full create/update/delete lifecycle on every entity.\n" +
-        "Typical pipeline write: create_company({ name: \"Acme\" }) — that IS the deal card. create_deal is an alias (pass name or companyName). " +
+        "A company IS the deal card. create_company only adds a company that is not already in the pipeline. " +
+        "To inspect or change an existing company, pass companyName (or search_companies, then the id). " +
+        "The timeline is list_activity. What every agent has done is list_agent_runs. The agents themselves are list_agents. " +
+        "To run any of them, call run_agent with agentName and companyName. " +
         "Typical diligence flow: create_vault → add_documents_to_vault → poll until parsed → create_review_table → " +
-        "get_review_table rows with quotes → ask_knowledge for synthesis → run_agent(thesis_screen) for the fit score.",
+        "get_review_table rows with quotes → ask_knowledge for synthesis → run_agent for a judgment pass.",
     },
   );
 
@@ -233,7 +279,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "list_deals",
-    "Query deals. Filters: q, stageIds, ownerId, source, roundStage, minAsk/maxAsk, archived",
+    "Query pipeline cards. Filters: q, stageIds, ownerId, source, roundStage, minAsk/maxAsk, archived. This list does not include what has happened to each company — use list_activity for the timeline and list_agent_runs for agent runs.",
     { ...listDealsQuerySchema.shape },
     tool(async (args) => {
       const query = listDealsQuerySchema.parse(args);
@@ -303,14 +349,18 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "get_company",
-    "Get a company (pipeline card) incl. resolved custom field values. Pass companyId or dealId — they are the same id.",
-    { companyId: uuid.optional(), dealId: uuid.optional() },
-    tool(async (args) => core.companies.getCompany(core.ctx, requireSession(), entityId(args))),
+    "Get a company (pipeline card) incl. resolved custom field values. Pass companyId, dealId, or companyName — company and deal are the same record.",
+    { companyId: uuid.optional(), dealId: uuid.optional(), companyName: z.string().min(1).optional() },
+    tool(async (args) => {
+      const id = await companyIdFrom(core, args);
+      if (!id) throw new Error("companyId, dealId, or companyName required");
+      return core.companies.getCompany(core.ctx, requireSession(), id);
+    }),
   );
 
   server.tool(
     "create_company",
-    "Create a company and put it on the default pipeline (first stage). Required: name. Optional: domain, sector, roundStage, askAmount. This is the Pipeline board card — there is no separate deal record. Reuses an existing name/domain match.",
+    "Add a company that is not already in the pipeline (first stage). Required: name. Optional: domain, sector, roundStage, askAmount. If the name or domain already exists, the existing record is returned and nothing else runs. To update, screen, research, or otherwise act on a company already here, use search_companies / get_company / update_company / run_agent / list_activity.",
     { ...createCompanySchema.shape },
     tool(async (args) => {
       const input = createCompanySchema.parse({
@@ -570,15 +620,22 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "list_activity",
-    "Audit trail / timeline. Scope by entity, company or deal; newest first.",
+    "The timeline: what happened, newest first. Pass companyName, companyId, or dealId to scope one company; omit them for the workspace. entityType filters the kind of event (company, agent_run, note, …).",
     {
       entityType: z.string().optional(),
       entityId: uuid.optional(),
       companyId: uuid.optional(),
       dealId: uuid.optional(),
+      companyName: z.string().min(1).optional(),
       limit: z.number().int().min(1).max(200).default(50),
     },
-    tool(async (args) => core.content.listActivity(core.ctx, requireSession(), args as never)),
+    tool(async (args) => {
+      const companyId = await companyIdFrom(core, args);
+      return core.content.listActivity(core.ctx, requireSession(), {
+        ...args,
+        ...(companyId ? { companyId } : {}),
+      } as never);
+    }),
   );
 
   server.tool(
@@ -990,7 +1047,7 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "list_agents",
-    "Codified fund agents (thesis_screen / diligence_checklist / portfolio_monitor / custom)",
+    "Every agent in this workspace, with its name, kind, and whether it is active. Pass that name to run_agent. Read list_agent_runs for what each one has already done.",
     {},
     tool(async () => core.agents.listAgents(core.ctx, requireSession())),
   );
@@ -1025,11 +1082,26 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "run_agent",
-    "Execute an agent end-to-end against a scope (companyId/dealId/spaceId). Returns queued run; poll get_agent_run for output. thesis_screen returns fitScore/recommendation/reasons/concerns and writes a screening note.",
-    { ...runAgentSchema.shape, agentId: uuid },
+    "Run any workspace agent on a company, deal, or space. Pass agentName as the user said it (for example the kind of work, or the agent's real name from list_agents). Do not invent agentId. companyName or companyId selects the company. Returns the queued run; get_agent_run reads status and output.",
+    {
+      agentId: z.string().min(1).optional(),
+      agentName: z.string().min(1).optional(),
+      companyId: z.string().min(1).optional(),
+      dealId: z.string().min(1).optional(),
+      companyName: z.string().min(1).optional(),
+      spaceId: uuid.optional(),
+      taskId: uuid.optional(),
+    },
     tool(async (args) => {
-      const { agentId, ...input } = runAgentSchema.extend({ agentId: uuid }).parse(args);
-      if (!agentId) throw new Error("agentId required");
+      const agentId = await agentIdFrom(core, args);
+      const companyId = await companyIdFrom(core, args);
+      const input = runAgentSchema.parse({
+        companyId,
+        dealId: args.dealId ?? companyId,
+        spaceId: args.spaceId,
+        taskId: args.taskId,
+        trigger: "manual",
+      });
       return core.agents.queueAgentRun(core.ctx, requireSession(), agentId, input);
     }),
   );
@@ -1043,15 +1115,25 @@ export function createCopyrMcpServer(core: Core): McpServer {
 
   server.tool(
     "list_agent_runs",
-    "Recent runs across agents; filter by agentId/status",
+    "What agents have done. Filter by agentName, agentId, companyName, companyId, and status (queued|running|completed|failed). Use with list_deals to see which companies an agent has or has not run on. Each item includes status and output.",
     {
-      agentId: uuid.optional(),
+      agentId: z.string().min(1).optional(),
+      agentName: z.string().min(1).optional(),
+      companyId: z.string().min(1).optional(),
+      companyName: z.string().min(1).optional(),
       status: z.enum(["queued", "running", "completed", "failed"]).optional(),
       limit: z.number().int().min(1).max(200).default(50),
     },
-    tool(async (args) =>
-      core.agents.listRuns(core.ctx, requireSession(), { ...args, limit: args.limit ?? 50 }),
-    ),
+    tool(async (args) => {
+      const agentId = args.agentName || args.agentId ? await agentIdFrom(core, args) : undefined;
+      const companyId = await companyIdFrom(core, args);
+      return core.agents.listRuns(core.ctx, requireSession(), {
+        agentId,
+        companyId,
+        status: args.status,
+        limit: args.limit ?? 50,
+      });
+    }),
   );
 
   /* ───────────────────── spaces & tasks ───────────────────── */

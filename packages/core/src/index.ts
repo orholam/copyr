@@ -154,6 +154,8 @@ export async function createCore(opts?: {
 }
 
 export * from "./context.js";
+export { matchAgent } from "./agentMatch.js";
+export type { AgentCandidate } from "./agentMatch.js";
 export * from "./errors.js";
 export { mergeCompany, listCompanyRelationships } from "./services/companies.js";
 export { resolveSession, getWorkspace, listCreditLedger, createApiKey, listApiKeys, revokeApiKey, ensureUserWorkspace } from "./services/workspace.js";

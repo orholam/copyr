@@ -14,7 +14,7 @@ import { toIso } from "../mappers.js";
  * persisted so threads are reviewable History.
  */
 
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 6;
 
 type ToolExec = (ctx: CoreContext, session: Session, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -242,16 +242,20 @@ function builtinHost(ctx: CoreContext): AssistantToolHost {
  * MCP returns full DTOs (ids, timestamps, nulls, embedded blobs). Compact them
  * so the transcript stays readable for synthesis and cheap for real models.
  */
-const DROP_KEYS = new Set(["workspaceId", "data", "position", "createdByUserId", "userId", "kindHint"]);
+const DROP_KEYS = new Set(["workspaceId", "position", "createdByUserId", "userId", "kindHint"]);
 
 function compactToolResult(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined || value === "") return undefined;
-  if (typeof value === "string")
-    return value.length > 400 ? `${value.slice(0, 397)}…` : value;
+  if (typeof value === "string") {
+    const cap = depth >= 2 ? 180 : 500;
+    return value.length > cap ? `${value.slice(0, cap - 1)}…` : value;
+  }
   if (typeof value !== "object") return value;
-  if (Array.isArray(value))
-    return value.slice(0, 10).map((v) => compactToolResult(v, depth + 1)).filter((v) => v !== undefined);
-  if (depth >= 4) return "…";
+  if (Array.isArray(value)) {
+    const cap = depth <= 1 ? 40 : 8;
+    return value.slice(0, cap).map((v) => compactToolResult(v, depth + 1)).filter((v) => v !== undefined);
+  }
+  if (depth >= 5) return "…";
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (DROP_KEYS.has(k)) continue;
@@ -429,14 +433,21 @@ async function runTurn(
     creditsUsed += 1;
 
     if (turn.toolCalls.length) {
+      const seen = new Set<string>();
+      const calls = turn.toolCalls.filter((call) => {
+        const key = `${call.name}:${JSON.stringify(call.args ?? {})}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       // persist the assistant's intent to call tools
       await insertMessage(
         "assistant",
         "",
-        { toolCalls: turn.toolCalls },
+        { toolCalls: calls },
       );
 
-      for (const call of turn.toolCalls) {
+      for (const call of calls) {
         const spec = toolSpecs.find((t) => t.name === call.name);
         const lastUser = [...history].reverse().find((m) => m.role === "user");
         const args = spec
@@ -452,7 +463,7 @@ async function runTurn(
             throw new Error(`Missing required arguments: ${missing.join(", ")}`);
           }
           const result = await host.call(call.name, args, session);
-          resultText = JSON.stringify(compactToolResult(result)).slice(0, 6_000);
+          resultText = JSON.stringify(compactToolResult(result)).slice(0, 12_000);
         } catch (err) {
           ok = false;
           const required = requiredArgNames(spec?.inputSchema);
@@ -482,7 +493,14 @@ async function runTurn(
   }
 
   if (finalReply === null) {
+    history.push({
+      role: "user",
+      content: "Answer the last question from the tool results above. Do not call any more tools.",
+    });
+    const closing = await ctx.ai.assistantTurn({ messages: history, tools: [] });
+    creditsUsed += 1;
     finalReply =
+      closing.reply?.trim() ||
       "I ran several tool steps without converging on an answer — here is what I gathered above. Try narrowing the question.";
   }
 

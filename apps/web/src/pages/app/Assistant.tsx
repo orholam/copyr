@@ -160,6 +160,11 @@ export default function Assistant() {
   async function submit(content: string) {
     const clean = content.trim();
     if (!clean || turn) return;
+    const fromComposer = clean === draft.trim();
+    if (fromComposer) setDraft("");
+    const restoreDraft = () => {
+      if (fromComposer) setDraft((current) => (current.trim() ? current : clean));
+    };
     setSendError(null);
     setPendingUser(clean);
     setTurn({ tools: [], reply: "" });
@@ -220,12 +225,14 @@ export default function Assistant() {
           setSendError(fallbackErr instanceof Error ? fallbackErr.message : "Something went wrong");
           setPendingUser(null);
           setTurn(null);
+          restoreDraft();
           return;
         }
       }
       setSendError(err instanceof Error ? err.message : "Something went wrong");
       setPendingUser(null);
       setTurn(null);
+      restoreDraft();
     }
   }
 
@@ -394,32 +401,11 @@ export default function Assistant() {
                   );
                 }
                 if (m.role === "assistant") {
-                  if (!m.content && !m.toolCalls) {
-                    return (
-                      <div key={m.id} className={cx("flex items-start gap-3", !quiet && "animate-fade-in")}>
-                        <Avatar active />
-                        <div className="flex items-center gap-1.5 pt-2" aria-label="assistant is working">
-                          <i className="thinking-dot" />
-                          <i className="thinking-dot" style={{ animationDelay: "150ms" }} />
-                          <i className="thinking-dot" style={{ animationDelay: "300ms" }} />
-                          <span className="ml-1.5 text-xs text-paper-400">working through tools</span>
-                        </div>
-                      </div>
-                    );
-                  }
+                  if (!m.content) return null;
                   return (
                     <div key={m.id} className={cx("flex items-start gap-3", !quiet && "animate-fade-in")} style={quiet ? undefined : { animationDelay: `${delay}ms` }}>
                       <Avatar />
                       <div className="min-w-0 flex-1 space-y-1.5 pt-0.5">
-                        {!!m.toolCalls?.length && (
-                          <div className="flex flex-wrap gap-1">
-                            {m.toolCalls.map((tc, i) => (
-                              <span key={i} className="inline-flex items-center rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 font-mono text-[10px] text-brand-700">
-                                {formatToolLabel(tc.name, tc.args)}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                         {m.content && (
                           <div className="rounded-lg border border-paper-900/[0.08] bg-white px-3.5 py-2.5 shadow-sm">
                             <RichText text={m.content} className="space-y-2" />
