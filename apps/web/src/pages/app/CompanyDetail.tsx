@@ -38,6 +38,7 @@ interface Company {
   id: string;
   name: string;
   domain: string | null;
+  logoUrl?: string | null;
   sector: string | null;
   location: string | null;
   description: string | null;
@@ -300,7 +301,7 @@ export default function CompanyDetail() {
       <header className="panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <Avatar name={c.name} size={44} />
+            <Avatar name={c.name} domain={c.domain} logoUrl={c.logoUrl} size={44} />
             <div>
               <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.01em] text-paper-900">{c.name}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-paper-500">

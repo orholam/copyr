@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { withHttpScheme } from "@copyr/contracts";
 import { api } from "../../lib/api";
@@ -17,6 +17,26 @@ export default function AddCompanyModal({
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
+  const [companyName, setCompanyName] = useState("");
+  const [website, setWebsite] = useState("");
+  const [brandHits, setBrandHits] = useState<Array<{ name: string; domain: string; logoUrl: string }>>([]);
+
+  useEffect(() => {
+    const q = companyName.trim();
+    if (q.length < 2 || website.trim()) {
+      setBrandHits([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api
+        .get<{ items: Array<{ name: string; domain: string; logoUrl: string }> }>(
+          `/logos/search?q=${encodeURIComponent(q)}&method=typeahead&limit=6`,
+        )
+        .then((res) => setBrandHits(res.items ?? []))
+        .catch(() => setBrandHits([]));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [companyName, website]);
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["deals"] });
@@ -152,9 +172,9 @@ export default function AddCompanyModal({
             const fd = new FormData(e.currentTarget as HTMLFormElement);
             const askRaw = fd.get("askAmount") as string;
             void manual.mutateAsync({
-              companyName: String(fd.get("companyName")),
-              domain: (fd.get("website") as string)?.trim() || undefined,
-              website: (fd.get("website") as string)?.trim() || undefined,
+              companyName,
+              domain: website.trim() || undefined,
+              website: website.trim() || undefined,
               roundStage: (fd.get("roundStage") as string) || undefined,
               askAmount: askRaw ? Number(askRaw) * 1_000_000 : undefined,
               description: (fd.get("description") as string) || undefined,
@@ -162,10 +182,45 @@ export default function AddCompanyModal({
           }}
         >
           <Field label="Company name">
-            <input name="companyName" required className={inputCls} placeholder="Acme Inc." />
+            <input
+              name="companyName"
+              required
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className={inputCls}
+              placeholder="Acme Inc."
+              autoComplete="off"
+            />
+            {brandHits.length > 0 && (
+              <ul className="mt-1 overflow-hidden rounded-lg border border-paper-900/[0.1] bg-white">
+                {brandHits.map((hit) => (
+                  <li key={hit.domain}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left hover:bg-paper-100"
+                      onClick={() => {
+                        setCompanyName(hit.name);
+                        setWebsite(hit.domain);
+                        setBrandHits([]);
+                      }}
+                    >
+                      <img src={hit.logoUrl} alt="" width={20} height={20} referrerPolicy="origin" className="h-5 w-5 rounded-full object-contain" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-paper-900">{hit.name}</span>
+                      <span className="truncate text-[12px] text-paper-500">{hit.domain}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Field>
           <Field label="Website" hint="We enrich the company from its site before screening — helps the Thesis Screener avoid a thin-data pass.">
-            <input name="website" placeholder="acme.com" className={inputCls} />
+            <input
+              name="website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="acme.com"
+              className={inputCls}
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Round">

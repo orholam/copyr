@@ -40,7 +40,7 @@ interface DealLite {
   stageId: string;
   askAmount: number | null;
   updatedAt: string;
-  company: { id: string; name: string };
+  company: { id: string; name: string; domain?: string | null; logoUrl?: string | null };
 }
 
 const TICK = { fontSize: 10, fill: "currentColor" };
@@ -232,7 +232,7 @@ export default function Dashboard() {
                   to={`/app/companies/${deal.companyId}`}
                   className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-paper-100"
                 >
-                  <Avatar name={deal.company.name} size={26} />
+                  <Avatar name={deal.company.name} domain={deal.company.domain} logoUrl={deal.company.logoUrl} size={26} />
                   <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-paper-900">{deal.company.name}</span>
                   <span className="text-[11px] text-paper-400">{timeAgo(deal.updatedAt)}</span>
                   {deal.askAmount !== null && (

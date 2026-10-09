@@ -26,6 +26,7 @@ import * as researchSvc from "./services/research.js";
 import * as commandCenterSvc from "./services/commandcenter.js";
 import * as automationsSvc from "./services/automations.js";
 import * as assistantSvc from "./services/assistant.js";
+import * as logosSvc from "./services/logos.js";
 import { startWorkers } from "./jobs/index.js";
 
 export interface Core {
@@ -68,6 +69,8 @@ export interface Core {
   assistant: typeof assistantSvc;
   /** unified agents + workflows view */
   automations: typeof automationsSvc;
+  /** Logo.dev brand search */
+  logos: typeof logosSvc;
 }
 
 export async function createCore(opts?: {
@@ -135,6 +138,7 @@ export async function createCore(opts?: {
     commandCenter: commandCenterSvc,
     assistant: assistantSvc,
     automations: automationsSvc,
+    logos: logosSvc,
   };
   return core;
 }

@@ -48,7 +48,7 @@ interface Deal {
   tags: string[];
   source: string;
   updatedAt: string;
-  company: { id: string; name: string; domain: string | null; sector: string | null; description?: string | null };
+  company: { id: string; name: string; domain: string | null; sector: string | null; description?: string | null; logoUrl?: string | null };
   fields: Record<string, string | number | boolean | string[] | null>;
 }
 interface Stage {
@@ -125,7 +125,7 @@ function CardBody({ deal }: { deal: Deal }) {
   return (
     <>
       <div className="flex items-start gap-2.5">
-        <Avatar name={deal.company.name} size={32} />
+        <Avatar name={deal.company.name} domain={deal.company.domain} logoUrl={deal.company.logoUrl} size={32} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13.5px] font-semibold leading-5 text-paper-900">{deal.company.name}</p>
           {subtitle && <p className="mt-0.5 truncate text-xs font-medium leading-4 text-paper-500">{subtitle}</p>}
@@ -665,7 +665,7 @@ export default function Pipeline() {
                   >
                     <td className="max-w-[280px] px-3 py-3">
                       <div className="flex items-center gap-3">
-                        <Avatar name={deal.company.name} size={28} />
+                        <Avatar name={deal.company.name} domain={deal.company.domain} logoUrl={deal.company.logoUrl} size={28} />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold leading-5 text-paper-900">
                             {deal.company.name}

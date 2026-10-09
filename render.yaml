@@ -54,6 +54,12 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: PARALLEL_API_KEY
+        sync: false
+      - key: LOGO_DEV_PUBLISHABLE_KEY
+        sync: false
+      - key: LOGO_DEV_SECRET_KEY
+        sync: false
       - key: DEV_WORKSPACE_SLUG
         value: harbor-ventures
       - key: ALLOW_DEV_WORKSPACE_AUTH

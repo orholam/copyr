@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconX } from "./icons";
 
@@ -10,7 +10,35 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 
 const HUES = [222, 254, 268, 290, 330, 14, 34, 92, 152, 174];
 
-export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+const LOGO_DEV_PUBLISHABLE_KEY = "pk_b3d4wqxITl6JtFO9UyXNng";
+
+export function companyLogoSrc(domain?: string | null, size = 64): string | null {
+  const key = (import.meta.env.VITE_LOGO_DEV_PUBLISHABLE_KEY as string | undefined) || LOGO_DEV_PUBLISHABLE_KEY;
+  const host = (domain ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "");
+  if (!key || !host || !host.includes(".")) return null;
+  const px = Math.min(256, Math.max(32, size * 2));
+  return `https://img.logo.dev/${host}?token=${encodeURIComponent(key)}&format=png&size=${px}&retina=true`;
+}
+
+export function Avatar({
+  name,
+  size = 28,
+  domain,
+  logoUrl,
+}: {
+  name: string;
+  size?: number;
+  domain?: string | null;
+  logoUrl?: string | null;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [domain, logoUrl]);
+  const src = failed ? null : logoUrl || companyLogoSrc(domain, size);
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   const hue = HUES[h % HUES.length] ?? 220;
@@ -19,6 +47,20 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        referrerPolicy="origin"
+        onError={() => setFailed(true)}
+        className="shrink-0 rounded-full bg-white object-contain"
+        style={{ width: size, height: size, boxShadow: "inset 0 0 0 1px rgba(23,22,19,.08)" }}
+      />
+    );
+  }
   return (
     <span
       className="flex shrink-0 select-none items-center justify-center rounded-full font-semibold"

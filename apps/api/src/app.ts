@@ -184,6 +184,7 @@ export async function buildApp(opts: { core?: Core } = {}) {
   const { default: commandCenterRoutes } = await import("./routes/commandcenter.js");
   const { default: assistantRoutes } = await import("./routes/assistant.js");
   const { default: automationsOverviewRoutes } = await import("./routes/automations.js");
+  const { default: logoRoutes } = await import("./routes/logos.js");
   const { registerSse } = await import("./sse.js");
 
   await app.register(workspaceRoutes, { prefix: "/api/v1" });
@@ -207,6 +208,7 @@ export async function buildApp(opts: { core?: Core } = {}) {
   await app.register(commandCenterRoutes, { prefix: "/api/v1" });
   await app.register(assistantRoutes, { prefix: "/api/v1" });
   await app.register(automationsOverviewRoutes, { prefix: "/api/v1" });
+  await app.register(logoRoutes, { prefix: "/api/v1" });
   await registerSse(app, core);
 
   // health

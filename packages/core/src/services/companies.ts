@@ -10,6 +10,7 @@ import { CoreError, type CoreContext, type Session } from "../context.js";
 import { mapCompany } from "../mappers.js";
 import { loadSyndicatePeople } from "./syndicate.js";
 import { logActivity } from "../activity.js";
+import { resolveCompanyLogo } from "./logos.js";
 import { isPlaceholderCopy } from "../screenMaterial.js";
 import { generateKeyBetween } from "../fractional.js";
 import { loadFieldMaps, setFieldValues } from "./fields.js";
@@ -167,15 +168,23 @@ export async function createCompany(
   session: Session,
   input: CreateCompanyValues,
 ): Promise<CompanyDto> {
+  let domain = input.domain ?? null;
+  let logoUrl = input.logoUrl ?? null;
+  if (!logoUrl) {
+    const resolved = await resolveCompanyLogo({ name: input.name, domain });
+    domain = domain ?? resolved.domain;
+    logoUrl = resolved.logoUrl;
+  }
+
   // Opportunistic fast enrichment before insert so Thesis Screener sees more than a bare name
   let fastEnrich: { description?: string; sector?: string } = {};
-  if (input.domain && !input.description) {
-    fastEnrich = await tryFastWebsiteEnrich(input.domain);
+  if (domain && !input.description) {
+    fastEnrich = await tryFastWebsiteEnrich(domain);
   }
 
   return ctx.db.transaction(async (tx) => {
     // dedupe by name/domain — unless explicitly updating an existing record
-    const existing = await findCompanyMatch(ctx, tx, session.workspaceId, input.name, input.domain);
+    const existing = await findCompanyMatch(ctx, tx, session.workspaceId, input.name, domain);
     if (existing && !input.mergeWithExisting) {
       throw new CoreError(`company "${existing.name}" already exists`, {
         code: "company_exists",
@@ -199,12 +208,12 @@ export async function createCompany(
       .values({
         workspaceId: session.workspaceId,
         name: input.name,
-        domain: input.domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
+        domain: domain?.replace(/^https?:\/\//, "").replace(/\/.*$/, "") ?? null,
         sector: input.sector ?? fastEnrich.sector ?? null,
         location: input.location ?? null,
         description: input.description ?? fastEnrich.description ?? null,
         linkedinUrl: input.linkedinUrl ?? null,
-        logoUrl: input.logoUrl ?? null,
+        logoUrl,
         foundedYear: input.foundedYear ?? null,
         employeeCount: input.employeeCount ?? null,
         status: input.status ?? "active",

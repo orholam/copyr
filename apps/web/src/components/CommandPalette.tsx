@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { Avatar, cx } from "./ui";
 
 interface SearchResults {
-  companies: Array<{ id: string; name: string; sector: string | null; status: string }>;
+  companies: Array<{ id: string; name: string; domain: string | null; sector: string | null; status: string }>;
   deals: Array<{ id: string; title: string; companyId: string; companyName: string; stageName: string | null }>;
   conversations?: Array<{ id: string; title: string; lastMessageAt: string }>;
 }
@@ -58,7 +58,7 @@ export function CommandPalette({
   });
 
   const items = useMemo(() => {
-    type Item = { key: string; group: string; label: string; hint?: string; run: () => void };
+    type Item = { key: string; group: string; label: string; hint?: string; domain?: string | null; run: () => void };
     const out: Item[] = [];
     if (!q.trim()) {
       const dests: Array<[string, string]> = [
@@ -93,6 +93,7 @@ export function CommandPalette({
           key: `c-${c.id}`,
           group: "Companies",
           label: c.name,
+          domain: c.domain,
           hint: [c.sector, c.status].filter(Boolean).join(" · "),
           run: () => nav(`/app/companies/${c.id}`),
         });
@@ -224,7 +225,7 @@ export function CommandPalette({
                       active ? "bg-paper-200/70 text-paper-900" : "text-paper-700",
                     )}
                   >
-                    {group !== "Navigate" && <Avatar name={it.label} size={20} />}
+                    {group !== "Navigate" && <Avatar name={it.label} domain={it.domain} size={20} />}
                     <span className="flex-1 truncate">{it.label}</span>
                     {it.hint && <span className="max-w-[45%] truncate text-xs text-paper-500">{it.hint}</span>}
                   </button>

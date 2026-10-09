@@ -304,13 +304,13 @@ export async function globalSearch(
   q: string,
   limit = 8,
 ): Promise<{
-  companies: Array<{ id: string; name: string; sector: string | null; status: string }>;
+  companies: Array<{ id: string; name: string; domain: string | null; sector: string | null; status: string }>;
   deals: Array<{ id: string; title: string; companyId: string; companyName: string; stageName: string | null }>;
   conversations: Array<{ id: string; title: string; lastMessageAt: string }>;
 }> {
   const like = `%${q}%`;
   const companyRows = await ctx.db
-    .select({ id: companies.id, name: companies.name, sector: companies.sector, status: companies.status })
+    .select({ id: companies.id, name: companies.name, domain: companies.domain, sector: companies.sector, status: companies.status })
     .from(companies)
     .where(
       and(
