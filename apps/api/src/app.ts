@@ -24,6 +24,8 @@ function bearerToken(header: string | string[] | undefined): string | null {
   return m?.[1] ?? null;
 }
 
+// Web deploys are skipped when a commit only touches apps/web. This file lives in the
+// project Vercel actually builds, so a change here publishes the SPA.
 export async function buildApp(opts: { core?: Core } = {}) {
   const config = loadConfig();
   const core = opts.core ?? (await createCore({ runWorkers: process.env.API_RUN_WORKERS !== "false" }));
